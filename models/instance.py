@@ -18,10 +18,11 @@ class Operation:
         return f"{{'type':{self.type}, 'processing_time':{self.processing_time}}}"
 
 class Job:
-    def __init__(self, big: int = 0, due_date: int = 0, pos_time: int = 0, operations: list[Operation] = [], status: int = 0, blocked: int = 0):
+    def __init__(self, big: int = 0, due_date: int = 0, release_date: int = 0, pos_time: int = 0, operations: list[Operation] = [], status: int = 0, blocked: int = 0):
         self.operations: list[Operation] = operations
         self.big: int = big
         self.due_date: int = due_date
+        self.release_date : int = release_date
         self.pos_time: int = pos_time
         self.status: int = status
         self.blocked: int = blocked
@@ -45,7 +46,14 @@ class Instance:
         jobs = []
         for job_data in _data["jobs"]:
             operations = [Operation(type=op["type"], machineing_time=op["processing_time"]) for op in job_data["operations"]]
-            job = Job(big=job_data["big"], due_date=job_data["due_date"], pos_time=job_data["pos_time"], operations=operations, status=job_data["status"], blocked=job_data["blocked"])
+            job = Job(
+                big=job_data["big"], 
+                due_date=job_data["due_date"], 
+                pos_time=job_data["pos_time"], 
+                release_date = job_data["release_date"],
+                operations=operations, 
+                status=job_data["status"], 
+                blocked=job_data["blocked"])
             jobs.append(job)
             n += len(operations)
         return Instance(jobs=jobs, n=n)

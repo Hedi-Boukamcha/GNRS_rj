@@ -50,10 +50,10 @@ def generate_one(
             last_type = chosen_type
             job["operations"].append(op)
         
-        proc_total   = sum(o["processing_time"] for o in job["operations"])
-        transport    = (2 * L + pos_time) + nb_operations * (2 * M)
-        temps_traitment_min    = proc_total + transport
-        release_date = random.randint(0, max(0, min(due_date_max // 3, due_date - temps_traitment_min)))
+        proc_total          = sum(o["processing_time"] for o in job["operations"])
+        transport           = (2 * L + pos_time) + nb_operations * (2 * M)
+        min_treat_time      = proc_total + transport
+        release_date        = random.randint(0, max(0, min(due_date_max // 3, due_date - min_treat_time)))
         job["release_date"] = release_date
         
         jobs.append(job)
