@@ -79,6 +79,9 @@ def search_start_time(state: State, j: JobState, d: Decision, forbidden_station:
         start_time = search_best_station_and_load_job(state, j, forbidden_station)
     if d.operation_id > 0:
         start_time = max(start_time, j.calendar.get_last_event().end)
+    
+    # le job ne peut pas demarrer avant sa release date
+    start_time = max(start_time, j.job.release_date)
     return start_time
 
 def search_best_station_and_load_job(state: State, j: JobState, forbidden_station: StationState) -> int:

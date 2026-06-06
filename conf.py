@@ -52,7 +52,7 @@ GRAPH_DIM: int        = 32
 PB_SIZE_DIM: int      = 6
 
 # Nb raw features
-JOB_FEATURES: int     = 13
+JOB_FEATURES: int     = 14
 STATION_FEATURES: int = 2
 MACHINE_FEATURES: int = 3
 ROBOT_FEATURES: int   = 4
