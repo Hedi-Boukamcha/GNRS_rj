@@ -300,6 +300,7 @@ if __name__ == "__main__":
         improve: bool  = to_bool(args.improve)
         extension: str = "improved_gnn_" if improve else "gnn_"
         if beam:
-            beam_solve_one(agent=agent, path=path, gantt_path=gantt_path+extension+args.size+"_"+args.id+".png", size=args.size , id=args.id, improve=improve, retires=RETRIES, device=device, train=False, eps_threshold=0.0) 
+            # beam_solve_one(agent=agent, path=path, gantt_path=gantt_path+extension+args.size+"_"+args.id+".png", size=args.size , id=args.id, improve=improve, retires=RETRIES, device=device, train=False, eps_threshold=0.0)
+            beam_solve_one(agent=agent, path=path, gantt_path=gantt_path+extension+args.size+"_"+args.id+".png", size=args.size, id=args.id, improve=improve, device=device)  
         else:
             repeated_solve_one(agent=agent, path=path, gantt_path=gantt_path+extension+args.size+"_"+args.id+".png", size=args.size , id=args.id, improve=improve, retires=RETRIES, device=device, train=False, eps_threshold=0.0) 

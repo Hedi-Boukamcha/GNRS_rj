@@ -79,9 +79,6 @@ def search_start_time(state: State, j: JobState, d: Decision, forbidden_station:
         start_time = search_best_station_and_load_job(state, j, forbidden_station)
     if d.operation_id > 0:
         start_time = max(start_time, j.calendar.get_last_event().end)
-    
-    # le job ne peut pas demarrer avant sa release date
-    start_time = max(start_time, j.job.release_date)
     return start_time
 
 def search_best_station_and_load_job(state: State, j: JobState, forbidden_station: StationState) -> int:
@@ -98,7 +95,8 @@ def search_best_station_and_load_job(state: State, j: JobState, forbidden_statio
     return load_time
 
 def load_job_into_station(state: State, job: JobState, station: StationState, L: int, start_loading_time: int):
-    loaded_time: int    = start_loading_time + L if station.calendar.has_events() else 0
+    start_loading_time = max(start_loading_time, job.job.release_date)
+    loaded_time: int   = start_loading_time + L if station.calendar.has_events() else start_loading_time
     station.calendar.add(Event(start=start_loading_time, end=loaded_time, event_type=LOAD, job=job, station=station, source=state.all_stations, dest=state.all_stations))
     job.calendar.add(Event(start=start_loading_time, end=loaded_time, event_type=LOAD, job=job, station=station, source=state.all_stations, dest=state.all_stations))
     job.location        = state.all_stations
