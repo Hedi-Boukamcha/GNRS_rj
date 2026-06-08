@@ -75,9 +75,9 @@ def gnn_gantt(path: str, state: State, instance: str, bar_h: float = 0.8, min_ba
             job_id = job.id if job else -1
             color  = JOB_COLORS[job_id % len(JOB_COLORS)] + "44"
             if e.event_type == AWAIT:
-                ax.add_patch(Rectangle((e.start, i), e.end-e.start, bar_h, facecolor=color, edgecolor="#00000022", hatch="///", clip_on=False, zorder=3))
+                ax.add_patch(Rectangle((e.start, level_index[lvl]), e.end-e.start, bar_h, facecolor=color, edgecolor="#00000022", hatch="///", clip_on=False, zorder=3))
             if lvl=="Robot" and e.event_type == MOVE:
-                ax.add_patch(Rectangle((e.start, 3), e.end-e.start, bar_h, facecolor=color, edgecolor="#FFFFFF1F", linewidth=0, hatch="xxx", clip_on=False, zorder=2))
+                ax.add_patch(Rectangle((e.start, level_index["Robot"]), e.end-e.start, bar_h, facecolor=color, edgecolor="#FFFFFF1F", linewidth=0, hatch="xxx", clip_on=False, zorder=2))
 
 
     if not tasks:
@@ -118,9 +118,19 @@ def gnn_gantt(path: str, state: State, instance: str, bar_h: float = 0.8, min_ba
 
         ax.add_patch(Rectangle((t_min, y), base_width, bar_h, facecolor=color, edgecolor="black", hatch="///", clip_on=False, zorder=3))
         ax.text(t_min + base_width/2, y + bar_h/2, "", rotation=90, ha="center", va="center",zorder=2)
-
+    
+    # 3-e bis. Rectangles release date sur ligne Arrivals
+    bar_width = max(2, (t_max - t_min) * 0.01)
+    for j in state.job_states:
+        rj    = j.job.release_date
+        color = JOB_COLORS[j.id % len(JOB_COLORS)]
+        y     = level_index["Arrivals"]
+        ax.add_patch(Rectangle((rj, y), 1, bar_h, facecolor=color, edgecolor="black", clip_on=False, zorder=5))
+        # ax.text(rj + bar_width / 2, y + bar_h / 2, f"J{j.id+1}", ha='center', va='center', fontsize=6, fontweight='bold', rotation=90)
+    
     # 3-f. Axe X
-    times = sorted({p for t in tasks for p in (t["start"], t["end"])})
+    rj_times = [j.job.release_date for j in state.job_states]
+    times = sorted({p for t in tasks for p in (t["start"], t["end"])} | set(rj_times))
     ax.set_xticks(times)
     ax.set_xticklabels([f"{x:.1f}" for x in times], rotation=45, fontsize=6)
     ax.set_xlim(times[0], times[-1])

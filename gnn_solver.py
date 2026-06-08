@@ -210,14 +210,17 @@ def solve_all_test(agent: Agent, gantt_path:str, path: str, improve: bool, beam:
     extension: str = "beam_gnn" if beam else "improved_gnn" if improve else "gnn"
     for folder, _, _ in INSTANCES_SIZES:
         p: str = path+folder+"/"
+        # Créer le sous-dossier method/size/
+        out_dir = f"{gantt_path}{extension}/{folder}/"
+        os.makedirs(out_dir, exist_ok=True)
         for i in os.listdir(p):
             if i.endswith('.json'):
                 idx = re.search(r"instance_(\d+)\.json", i)
                 for id in idx.groups():
                     if beam:
-                        beam_solve_one(agent=agent, gantt_path=f"{gantt_path}{extension}_{folder}_{id}.png", path=path, size=folder, id=id, improve=improve, device=device) 
+                        beam_solve_one(agent=agent, gantt_path=f"{out_dir}gantt_{id}.png", path=path, size=folder, id=id, improve=improve, device=device) 
                     else:   
-                        repeated_solve_one(agent=agent, gantt_path=f"{gantt_path}{agent.prefix}{extension}_{folder}_{id}.png", path=path, size=folder, id=id, improve=improve, device=device, retires=RETRIES)
+                        repeated_solve_one(agent=agent, gantt_path=f"{out_dir}gantt_{id}.png", path=path, size=folder, id=id, improve=improve, device=device, retires=RETRIES)
 
 def train(agent: Agent, path: str, device: str):
     start_time = time.time()
@@ -299,8 +302,10 @@ if __name__ == "__main__":
         beam: bool     = to_bool(args.beam)
         improve: bool  = to_bool(args.improve)
         extension: str = "improved_gnn_" if improve else "gnn_"
+        out_dir        = f"{gantt_path}{extension}/{args.size}/"
+        os.makedirs(out_dir, exist_ok=True)
         if beam:
             # beam_solve_one(agent=agent, path=path, gantt_path=gantt_path+extension+args.size+"_"+args.id+".png", size=args.size , id=args.id, improve=improve, retires=RETRIES, device=device, train=False, eps_threshold=0.0)
-            beam_solve_one(agent=agent, path=path, gantt_path=gantt_path+extension+args.size+"_"+args.id+".png", size=args.size, id=args.id, improve=improve, device=device)  
+            beam_solve_one(agent=agent, path=path, gantt_path=f"{out_dir}gantt_{args.id}.png", size=args.size, id=args.id, improve=improve, device=device)  
         else:
-            repeated_solve_one(agent=agent, path=path, gantt_path=gantt_path+extension+args.size+"_"+args.id+".png", size=args.size , id=args.id, improve=improve, retires=RETRIES, device=device, train=False, eps_threshold=0.0) 
+            repeated_solve_one(agent=agent, path=path, gantt_path=f"{out_dir}gantt_{args.id}.png", size=args.size , id=args.id, improve=improve, retires=RETRIES, device=device, train=False, eps_threshold=0.0) 

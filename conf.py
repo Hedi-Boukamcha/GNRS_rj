@@ -93,7 +93,7 @@ WARMUP_EPISODES     = 24_000       # 24_000  # nb episodes before starting to ad
 
 # Gantt configuration
 JOB_COLORS        = ['#8dd3c7', '#80b1d3', '#fb8072', '#fdb462', '#b3de69', '#fccde5', '#d9d9d9']
-GNN_GANTT_LEVELS  = ["Station 1", "Station 2", "Station 3", "Robot", "Machine 1", "Machine 2"]
+GNN_GANTT_LEVELS  = ["Arrivals", "Station 1", "Station 2", "Station 3", "Robot", "Machine 1", "Machine 2"]
 CP_GANTT_LEVELS   = ["Station 1", "Station 2", "Station 3", "Machine 1", "Machine 2"]
 STATIONS          = {"Station 1", "Station 2", "Station 3"}
 EVENT_COLORS      = { EXECUTE: "#8dd3c7", LOAD:    "#80b1d3", UNLOAD:  "#fb8072", MOVE:    "#fdb462", HOLD:    "#b3de69", POS:     "#fccde5"}
@@ -105,3 +105,14 @@ TABU_TENURE: int          = 15
 MAX_NO_IMPROVEMENT: int   = 100
 MAX_ITERATIONS: int       = 1000
 NEIGHBOR_SAMPLE_SIZE: int = 20
+
+
+
+# Orders generation configuration
+# (size_name, job_min, job_max, nb_commandes)
+ORDERS_SIZES: list = [
+    ("s",  1, 3,  2),   
+    ("m",  2, 4,  3),
+    ("l",  4, 6,  3),
+    ("xl", 6, 10, 4),
+]
