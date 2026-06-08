@@ -266,4 +266,100 @@ def position_job(j: JobState, o: OperationState, robot: RobotState, machine: Mac
     robot.free_at   = time
     return time
 
+
+def build_state_from_cut(state: State, cut_time: int) -> State:
+    
+    # 1. Filtrer le calendrier de chaque ressource
+    # Garder seulement les événements avec start < cut_time
+    # Les événements en cours (start < cut_time < end) sont gardés entièrement
+    
+    # 2. Recalculer free_at de chaque ressource
+    # free_at = end du dernier événement gardé
+    
+    # 3. Recalculer le status de chaque job
+    # - Tous les events end <= cut_time → DONE ou IN_SYSTEM
+    # - Un event en cours (start < cut_time < end) → IN_EXECUTION
+    # - Aucun event → NOT_YET
+    
+    # 4. Retourner le state modifié
+
+    
+    new_state_after_cut: State = state.clone()
+    
+    # 2. Filtrer le calendrier du robot
+    # Garder : events terminés (end <= cut_time) + events en cours (start < cut_time < end)
+    new_state_after_cut.robot.calendar.events = [e for e in new_state_after_cut.robot.calendar.events if e.start < cut_time]
+    new_state_after_cut.robot.free_at         = new_state_after_cut.robot.calendar.events[-1].end if new_state_after_cut.robot.calendar.events else 0
+    new_state_after_cut.robot.location        = new_state_after_cut.robot.calendar.events[-1].dest if new_state_after_cut.robot.calendar.events else new_state_after_cut.all_stations
+
+    # 3. Filtrer les calendriers des machines
+    for machine in [new_state_after_cut.machine1, new_state_after_cut.machine2]:
+        machine.calendar.events = [e for e in machine.calendar.events if e.start < cut_time]
+        machine.free_at         = machine.calendar.events[-1].end if machine.calendar.events else 0
+
+    # 4. Filtrer les calendriers des stations
+    for station in new_state_after_cut.all_stations.stations:
+        station.calendar.events = [e for e in station.calendar.events if e.start < cut_time]
+        station.free_at         = station.calendar.events[-1].end if station.calendar.events else 0
+        last_load               = next((e for e in reversed(station.calendar.events) if e.event_type == LOAD), None)
+        last_unload             = next((e for e in reversed(station.calendar.events) if e.event_type == UNLOAD), None)
+        if last_load and (last_unload is None or last_load.end > last_unload.end):
+            station.current_job = last_load.job
+        else:
+            station.current_job = None
+
+    # 5. Filtrer les calendriers des jobs et recalculer leur status
+    for j in new_state_after_cut.job_states:
+        j.calendar.events = [e for e in j.calendar.events if e.start < cut_time]
+        
+        if not j.calendar.events:
+            j.status          = NOT_YET
+            j.location        = None
+            j.current_station = None
+            for o in j.operation_states:
+                o.status         = NOT_YET
+                o.remaining_time = o.operation.processing_time
+                o.start          = 0
+                o.end            = 0
+        else:
+            last_event = j.calendar.events[-1]
+
+            if last_event.event_type == UNLOAD and last_event.end <= cut_time:
+                # Job complètement déchargé avant cut_time → DONE
+                j.status  = DONE
+                j.end     = last_event.end
+                j.delay   = max(0, j.end - j.job.due_date)
+                j.location = None
+                for o in j.operation_states:
+                    o.remaining_time = 0
+                    o.status         = DONE
+
+            elif last_event.event_type in {EXECUTE, HOLD} and last_event.start < cut_time:
+                # Opération en cours à cut_time → IN_EXECUTION
+                j.status          = IN_EXECUTION
+                j.location        = last_event.dest
+                o: OperationState = last_event.operation
+                o.status          = IN_EXECUTION
+                o.remaining_time  = max(0, last_event.end - cut_time)
+                # Opérations précédentes → DONE
+                for prev_o in j.operation_states:
+                    if prev_o.id < o.id:
+                        prev_o.remaining_time = 0
+                        prev_o.status         = DONE
+
+            else:
+                # Job dans le système mais pas en exécution
+                j.status   = IN_SYSTEM
+                j.location = last_event.dest
+                for o in j.operation_states:
+                    if o.end > 0 and o.end <= cut_time:
+                        o.remaining_time = 0
+                        o.status         = DONE
+                    else:
+                        o.remaining_time = o.operation.processing_time
+                        o.status         = NOT_YET
+
+    return new_state_after_cut
+
+
 # END OF FILE! ##########################################################################################
