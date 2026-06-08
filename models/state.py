@@ -234,6 +234,13 @@ class State:
             return 0.0
         return float(position.position_type == location)
 
+    # ajouter des jobs apres un cut time (nouveau state)
+    def add_jobs_to_state(self, new_jobs: list[Job]):
+        current_max_id = max(j.id for j in self.job_states) + 1 if self.job_states else 0
+        for i, job in enumerate(new_jobs):
+            job_state = JobState(id=current_max_id + i, job=job)
+            self.job_states.append(job_state)    
+
     def to_hyper_graph(self, last_job_in_pos: int, current_time: int, device: str) -> HeteroData:
         graph = HeteroData()
         job_machine_1: int  = -1
@@ -400,6 +407,8 @@ class State:
             graph["robot", "hold", "job"].edge_index = torch.tensor([[0], [job_robot]], dtype=torch.long)
             graph["job", "hold_by", "robot"].edge_index = graph["robot", "hold", "job"].edge_index.flip(0)
         return graph.to(device)
+    
+    
 
 @dataclass
 class RobotState:

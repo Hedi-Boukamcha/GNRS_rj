@@ -2,11 +2,11 @@ from conf import *
 from models.instance import Operation, Job, Instance
 import json
 
-# #####################################
-# =*= ORDER: COMMANDE-BASED INSTANCE =*=
-# #####################################
-__author__  = "Hedi Boukamcha; Anas Neumann"
-__email__   = "hedi.boukamcha.1@ulaval.ca; anas.neumann@polymtl.ca"
+# ##########################################
+# =*= ORDER: INSTANCE STRUCTURE AND LOAD =*=
+# ##########################################
+__author__  = "Hedi Boukamcha"
+__email__   = "hedi.boukamcha.1@ulaval.ca"
 __version__  = "1.0.0"
 __license__ = "MIT"
 
