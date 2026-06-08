@@ -40,6 +40,9 @@ for order in order_instance.orders[1:]:
     print(f"\n=== Calendrier J1 après cut={cut_time} ===")
     for e in cut_state.job_states[0].calendar.events:
         print(f"start={e.start}, end={e.end}, type={EVENT_NAMES[e.event_type]}, op={e.operation.id if e.operation else None}")
+    print(f"\n=== Calendrier J3 après cut={cut_time} ===")
+    for e in cut_state.job_states[2].calendar.events:
+        print(f"start={e.start}, end={e.end}, type={EVENT_NAMES[e.event_type]}, op={e.operation.id if e.operation else None}")
     print(f"\n=== Calendrier Station 3 après cut={cut_time} ===")
     for e in cut_state.all_stations.get(STATION_3).calendar.events:
         print(f"start={e.start}, end={e.end}, type={EVENT_NAMES[e.event_type]}, job=J{e.job.id+1 if e.job else None}")

@@ -42,8 +42,14 @@ def simulate(previous_state: State, d: Decision, clone: bool=False) -> State:
 
     # 7. Job needs to be placed on the positioner
     if d.parallel and o.operation.type == MACHINE_1:
-        pos_time: int                = position_job(j, o, robot, machine, target_job_at_machine_time)
-        time_start_of_execution: int = pos_time
+            # Vérifier si un POS est déjà en cours pour ce job
+        last_m1_event = machine.calendar.get_last_event()
+        if last_m1_event and last_m1_event.event_type == POS and last_m1_event.job.id == j.id:
+            # POS déjà fait → utiliser son end comme start d'exécution
+            time_start_of_execution = last_m1_event.end
+        else:
+            pos_time: int                = position_job(j, o, robot, machine, target_job_at_machine_time)
+            time_start_of_execution: int = pos_time
     else:
         time_start_of_execution: int = target_job_at_machine_time
 
@@ -284,121 +290,139 @@ def position_job(j: JobState, o: OperationState, robot: RobotState, machine: Mac
     robot.free_at   = time
     return time
 
+# SIMULATOR WITH CUT TIME ##########################################################################################
 
-def build_state_from_cut(state: State, cut_time: int) -> State:
-    
-    # 1. Filtrer le calendrier de chaque ressource
-    # Garder seulement les événements avec start < cut_time
-    # Les événements en cours (start < cut_time < end) sont gardés entièrement
-    
-    # 2. Recalculer free_at de chaque ressource
-    # free_at = end du dernier événement gardé
-    
-    # 3. Recalculer le status de chaque job
-    # - Tous les events end <= cut_time → DONE ou IN_SYSTEM
-    # - Un event en cours (start < cut_time < end) → IN_EXECUTION
-    # - Aucun event → NOT_YET
-    
-    # 4. Retourner le state modifié
+def _cut_filter(events, cut_time, keep_in_progress=True):
+    """Filtre les événements selon cut_time."""
+    if keep_in_progress:
+        return [e for e in events if e.end <= cut_time or (e.start <= cut_time and e.end > cut_time)]
+    return [e for e in events if e.end <= cut_time]
 
-    new_state_after_cut: State = state.clone()
-    
-    # Robot : garder events terminés + event en cours
-    robot_events = new_state_after_cut.robot.calendar.events
-    new_state_after_cut.robot.calendar.events = [e for e in robot_events if e.end <= cut_time or (e.start <= cut_time and e.end > cut_time)]
-    new_state_after_cut.robot.free_at         = new_state_after_cut.robot.calendar.events[-1].end if new_state_after_cut.robot.calendar.events else 0
-    new_state_after_cut.robot.location        = new_state_after_cut.robot.calendar.events[-1].dest if new_state_after_cut.robot.calendar.events else new_state_after_cut.all_stations
+def _cut_robot(new_state: State, cut_time: int):
+    new_state.robot.calendar.events = [e for e in new_state.robot.calendar.events 
+                                       if e.end <= cut_time or (e.start <= cut_time and e.end > cut_time)]
+    new_state.robot.free_at  = new_state.robot.calendar.events[-1].end if new_state.robot.calendar.events else 0
+    new_state.robot.location = new_state.robot.calendar.events[-1].dest if new_state.robot.calendar.events else new_state.all_stations
 
-    # Machines
-    for machine in [new_state_after_cut.machine1, new_state_after_cut.machine2]:
-        machine.calendar.events = [e for e in machine.calendar.events if e.end <= cut_time or (e.start <= cut_time and e.end > cut_time)]
-        machine.free_at         = machine.calendar.events[-1].end if machine.calendar.events else 0
+def _cut_machine(machine, cut_time: int):
+    # Garder le POS en cours pour que free_at soit correct
+    machine.calendar.events = [e for e in machine.calendar.events 
+                                if e.end <= cut_time or (e.start <= cut_time and e.end > cut_time)]
+    machine.free_at = machine.calendar.events[-1].end if machine.calendar.events else 0
 
-    # Stations
-    for station in new_state_after_cut.all_stations.stations:
-        station.calendar.events = [e for e in station.calendar.events if e.end <= cut_time]  # ← e.end
-        station.free_at         = station.calendar.events[-1].end if station.calendar.events else 0
-        last_load               = next((e for e in reversed(station.calendar.events) if e.event_type == LOAD), None)
-        last_unload             = next((e for e in reversed(station.calendar.events) if e.event_type == UNLOAD), None)
-        if last_load and (last_unload is None or last_load.end > last_unload.end):
-            station.current_job = new_state_after_cut.get_job_by_id(last_load.job.id)  # ← get_job_by_id
-        else:
-            station.current_job = None
+def _cut_station(station, new_state: State, cut_time: int):
+    """Reconstruit l'état d'une station au cut_time."""
+    station.calendar.events = _cut_filter(station.calendar.events, cut_time, keep_in_progress=False)
+    station.free_at         = station.calendar.events[-1].end if station.calendar.events else 0
+    last_load               = next((e for e in reversed(station.calendar.events) if e.event_type == LOAD), None)
+    last_unload             = next((e for e in reversed(station.calendar.events) if e.event_type == UNLOAD), None)
+    if last_load and (last_unload is None or last_load.end > last_unload.end):
+        station.current_job = new_state.get_job_by_id(last_load.job.id)
+    else:
+        station.current_job = None
 
-    # Jobs
-    for j in new_state_after_cut.job_states:
-        # Garder seulement les events terminés avant cut_time
-        j.calendar.events = [e for e in j.calendar.events if e.end <= cut_time]
-        
-        # Chercher un event en cours dans le state original
-        original_job      = state.get_job_by_id(j.id)
-        in_progress_event = next((e for e in original_job.calendar.events if e.start <= cut_time and e.end > cut_time), None)
+def _cut_job_not_yet(j: JobState):
+    """Job sans aucun event → NOT_YET."""
+    j.status          = NOT_YET
+    j.location        = None
+    j.current_station = None
+    for o in j.operation_states:
+        o.status         = NOT_YET
+        o.remaining_time = o.operation.processing_time
+        o.start          = 0
+        o.end            = 0
 
-        if not j.calendar.events and in_progress_event is None:
-            j.status          = NOT_YET
-            j.location        = None
-            j.current_station = None
+def _cut_job_done(j: JobState, last_event):
+    """Job complètement déchargé → DONE."""
+    j.status   = DONE
+    j.end      = last_event.end
+    j.delay    = max(0, j.end - j.job.due_date)
+    j.location = None
+    for o in j.operation_states:
+        o.remaining_time = 0
+        o.status         = DONE
+
+def _cut_job_in_execution(j: JobState, in_progress_event, new_state: State, cut_time: int):
+    """Event en cours (EXECUTE/HOLD/POS/MOVE) → IN_EXECUTION."""
+    j.status   = IN_EXECUTION
+    j.location = in_progress_event.dest
+    if in_progress_event.event_type == MOVE:
+        new_state.robot.location = in_progress_event.dest
+    original_op = in_progress_event.operation
+    if original_op is not None and in_progress_event.event_type in {EXECUTE, HOLD}:
+        cloned_op = j.get_operation(original_op.id)
+        if cloned_op is not None:
+            cloned_op.status         = IN_EXECUTION
+            cloned_op.remaining_time = max(0, in_progress_event.end - cut_time)
             for o in j.operation_states:
-                o.status         = NOT_YET
-                o.remaining_time = o.operation.processing_time
-                o.start          = 0
-                o.end            = 0
-
-        elif in_progress_event is not None:
-            print(f"in_progress_event={EVENT_NAMES[in_progress_event.event_type]}, op={in_progress_event.operation.id if in_progress_event.operation else None}, end={in_progress_event.end}")
-            # Event en cours → IN_EXECUTION
-            j.status   = IN_EXECUTION
-            j.location = in_progress_event.dest
-            # Si c'est un MOVE → mettre à jour la location du robot
-            if in_progress_event.event_type == MOVE:
-                new_state_after_cut.robot.location = in_progress_event.dest
-            original_op = in_progress_event.operation
-            if original_op is not None and in_progress_event.event_type in {EXECUTE, HOLD, POS}:
-                # Trouver l'opération correspondante dans le JOB CLONÉ
-                cloned_op = j.get_operation(original_op.id)
-                if cloned_op is not None:
-                    cloned_op.status         = IN_EXECUTION
-                    cloned_op.remaining_time = max(0, in_progress_event.end - cut_time)
-                    for prev_o in j.operation_states:
-                        if prev_o.id < cloned_op.id:
-                            prev_o.remaining_time = 0
-                            prev_o.status         = DONE
-                    # ← NOUVEAU : ops suivantes → NOT_YET
-                    for next_o in j.operation_states:
-                        if next_o.id > cloned_op.id:
-                            next_o.remaining_time = next_o.operation.processing_time
-                            next_o.status         = NOT_YET
-            else:
-                # MOVE en cours → opération suivante NOT_YET
-                for op in j.operation_states:
-                    if op.start > 0 and op.end <= cut_time:
-                        op.remaining_time = 0
-                        op.status         = DONE
-                    else:
-                        op.remaining_time = op.operation.processing_time
-                        op.status         = NOT_YET
-
-        else:
-            last_event = j.calendar.events[-1]
-            if last_event.event_type == UNLOAD:
-                j.status   = DONE
-                j.end      = last_event.end
-                j.delay    = max(0, j.end - j.job.due_date)
-                j.location = None
-                for o in j.operation_states:
+                if o.id < cloned_op.id:
                     o.remaining_time = 0
                     o.status         = DONE
-            else:
-                j.status   = IN_SYSTEM
-                j.location = last_event.dest
-                for o in j.operation_states:
-                    if o.start > 0 and o.end <= cut_time:
-                        o.remaining_time = 0
-                        o.status         = DONE
-                    else:
-                        o.remaining_time = o.operation.processing_time
-                        o.status         = NOT_YET
+                elif o.id > cloned_op.id:
+                    o.remaining_time = o.operation.processing_time
+                    o.status         = NOT_YET
 
-    return new_state_after_cut
+    elif original_op is not None and in_progress_event.event_type == POS:
+        cloned_op = j.get_operation(original_op.id)
+        if cloned_op is not None:
+            cloned_op.status         = NOT_YET
+            cloned_op.remaining_time = cloned_op.operation.processing_time
+            j.status                 = IN_SYSTEM
+            for o in j.operation_states:
+                if o.id < cloned_op.id:
+                    o.remaining_time = 0
+                    o.status         = DONE
+                elif o.id > cloned_op.id:
+                    o.remaining_time = o.operation.processing_time
+                    o.status         = NOT_YET
+
+    else:
+        # MOVE en cours → ops selon leur état réel
+        for o in j.operation_states:
+            if o.start > 0 and o.end <= cut_time:
+                o.remaining_time = 0
+                o.status         = DONE
+            else:
+                o.remaining_time = o.operation.processing_time
+                o.status         = NOT_YET
+
+def _cut_job_in_system(j: JobState, last_event, cut_time: int):
+    """Job dans le système mais pas en exécution → IN_SYSTEM."""
+    j.status   = IN_SYSTEM
+    j.location = last_event.dest
+    for o in j.operation_states:
+        if o.start > 0 and o.end <= cut_time:
+            o.remaining_time = 0
+            o.status         = DONE
+        else:
+            o.remaining_time = o.operation.processing_time
+            o.status         = NOT_YET
+
+def _cut_job(j: JobState, original_job: JobState, new_state: State, cut_time: int):
+    """Reconstruit l'état d'un job au cut_time."""
+    j.calendar.events     = _cut_filter(j.calendar.events, cut_time, keep_in_progress=False)
+    in_progress_event     = next((e for e in original_job.calendar.events if e.start <= cut_time and e.end > cut_time), None)
+
+    if not j.calendar.events and in_progress_event is None:
+        _cut_job_not_yet(j)
+    elif in_progress_event is not None:
+        _cut_job_in_execution(j, in_progress_event, new_state, cut_time)
+    else:
+        last_event = j.calendar.events[-1]
+        if last_event.event_type == UNLOAD:
+            _cut_job_done(j, last_event)
+        else:
+            _cut_job_in_system(j, last_event, cut_time)
+
+def build_state_from_cut(state: State, cut_time: int) -> State:
+    new_state: State = state.clone()
+    _cut_robot(new_state, cut_time)
+    for machine in [new_state.machine1, new_state.machine2]:
+        _cut_machine(machine, cut_time)
+    for station in new_state.all_stations.stations:
+        _cut_station(station, new_state, cut_time)
+    for j in new_state.job_states:
+        _cut_job(j, state.get_job_by_id(j.id), new_state, cut_time)
+    return new_state
 
 # END OF FILE! ##########################################################################################
