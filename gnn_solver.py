@@ -46,6 +46,15 @@ def search_possible_decisions(env: Environment, device: str) -> list[Decision]:
     for j in env.state.job_states:
         for o in j.operation_states:
             if o.remaining_time > 0:
+                if o.status == IN_EXECUTION:
+                    # Vérifier si l'opération est encore physiquement en cours
+                    last_event = j.calendar.get_last_event()
+                    if last_event and last_event.end > env.action_time:
+                        break  # encore en cours
+                    # Sinon l'opération est terminée → proposer la suivante
+                    o.status         = DONE
+                    o.remaining_time = 0
+                    continue
                 if o.operation.type == MACHINE_1:
                     M1_decisions.append(Decision(job_id=j.id, job_id_in_graph=j.graph_id, operation_id=o.id, machine=o.operation.type, parallel=True, comp=-1))
                     M1_decisions.append(Decision(job_id=j.id, job_id_in_graph=j.graph_id, operation_id=o.id, machine=o.operation.type, parallel=False, comp=-1))

@@ -79,6 +79,11 @@ def search_start_time(state: State, j: JobState, d: Decision, forbidden_station:
         start_time = search_best_station_and_load_job(state, j, forbidden_station)
     if d.operation_id > 0:
         start_time = max(start_time, j.calendar.get_last_event().end)
+    
+    # ← Si l'opération est IN_EXECUTION, on reprend à la fin de l'événement en cours
+    o: OperationState = j.operation_states[d.operation_id]
+    if o.status == IN_EXECUTION:
+        start_time = max(start_time, j.calendar.get_last_event().end)
     return start_time
 
 def search_best_station_and_load_job(state: State, j: JobState, forbidden_station: StationState) -> int:
@@ -111,6 +116,8 @@ def get_loading_time_and_force_unloading_previous(state: State, j: JobState, sta
     else: # Case 2: unload the blocking job!
         current_job: JobState       = station.current_job
         last_op: OperationState     = current_job.get_last_executed_operation()
+        if current_job.location is None:  # ← NOUVEAU
+            return max(0, station.free_at)
         if current_job.location.position_type == POS_MACHINE_1:
             robot_move_job_to_station(state, state.robot, current_job, last_op, state.machine1, state.M)
         elif current_job.location.position_type == POS_MACHINE_2:
@@ -125,6 +132,8 @@ def test_loading_time(state: State, station: StationState) -> int:
         current_job: JobState   = station.current_job
         last_op: OperationState = current_job.get_last_executed_operation()
         time: int               = last_op.end if last_op else 0
+        if current_job.location is None:  # ← NOUVEAU
+            return max(0, station.free_at)
         if current_job.location.position_type == POS_MACHINE_1 or current_job.location.position_type == POS_MACHINE_2:
             time +=2* state.M if state.robot.location != current_job.location else state.M
         time += state.L
@@ -226,7 +235,8 @@ def unload(state: State, j: JobState, o: OperationState, L: int, unloading_start
 # (4/4) EXECUTE ONE OPERATION ##############################################################################
 
 def execute_operation(j: JobState, o: OperationState, robot: RobotState, machine: Machine, parallel: bool, time: int) -> int:
-    execution_time: int = o.operation.processing_time
+    #execution_time: int = o.operation.processing_time
+    execution_time: int = o.remaining_time if o.status == IN_EXECUTION else o.operation.processing_time  # ← MODIFIER ICI
     o.start             = time
     if not parallel:
         robot.free_at   = time + execution_time
@@ -242,6 +252,10 @@ def execute_operation(j: JobState, o: OperationState, robot: RobotState, machine
 
 def robot_move_to_job(j: JobState, o: OperationState, robot: RobotState, M: int):
     if robot.location  != j.location:
+        # Vérifier si le robot est déjà en route vers ce job
+        if robot.calendar.has_events() and robot.calendar.get_last_event().dest == j.location:
+            robot.location = j.location
+            return
         s: StationState = j.current_station if j.location.position_type == POS_STATION else None
         robot.calendar.add(Event(start=robot.free_at, end=(robot.free_at + M), event_type=MOVE, job=j, source=robot.location, dest=j.location, operation=o, station=s))
         robot.location  = j.location
@@ -249,13 +263,17 @@ def robot_move_to_job(j: JobState, o: OperationState, robot: RobotState, M: int)
 
 def robot_move_to_machine(j: JobState, o: OperationState, robot: RobotState, machine: Machine, M: int, job_ready_time: int) -> int:
     time = max(job_ready_time, robot.free_at, machine.free_at)
-    s: StationState = j.current_station if j.location.position_type == POS_STATION else None
-    robot.calendar.add(Event(start=time, end=(time + M), event_type=MOVE, job=j, source=robot.location, dest=machine, operation=o, station=s))
-    j.calendar.add(Event(start=time, end=(time + M), event_type=MOVE, job=j, source=robot.location, dest=machine, operation=o, station=s))
-    robot.location  = machine
-    j.location      = machine
-    time           += M
-    robot.free_at   = time
+    if robot.location != machine:  # ← NOUVEAU : ne pas ajouter de move si déjà sur la machine
+        s: StationState = j.current_station if j.location.position_type == POS_STATION else None
+        robot.calendar.add(Event(start=time, end=(time + M), event_type=MOVE, job=j, source=robot.location, dest=machine, operation=o, station=s))
+        j.calendar.add(Event(start=time, end=(time + M), event_type=MOVE, job=j, source=robot.location, dest=machine, operation=o, station=s))
+        robot.location  = machine
+        j.location      = machine
+        time           += M
+        robot.free_at   = time
+    else:
+        robot.location = machine
+        j.location     = machine
     return time
 
 def position_job(j: JobState, o: OperationState, robot: RobotState, machine: Machine, time: int) -> int:
@@ -283,36 +301,40 @@ def build_state_from_cut(state: State, cut_time: int) -> State:
     
     # 4. Retourner le state modifié
 
-    
     new_state_after_cut: State = state.clone()
     
-    # 2. Filtrer le calendrier du robot
-    # Garder : events terminés (end <= cut_time) + events en cours (start < cut_time < end)
-    new_state_after_cut.robot.calendar.events = [e for e in new_state_after_cut.robot.calendar.events if e.start < cut_time]
+    # Robot : garder events terminés + event en cours
+    robot_events = new_state_after_cut.robot.calendar.events
+    new_state_after_cut.robot.calendar.events = [e for e in robot_events if e.end <= cut_time or (e.start <= cut_time and e.end > cut_time)]
     new_state_after_cut.robot.free_at         = new_state_after_cut.robot.calendar.events[-1].end if new_state_after_cut.robot.calendar.events else 0
     new_state_after_cut.robot.location        = new_state_after_cut.robot.calendar.events[-1].dest if new_state_after_cut.robot.calendar.events else new_state_after_cut.all_stations
 
-    # 3. Filtrer les calendriers des machines
+    # Machines
     for machine in [new_state_after_cut.machine1, new_state_after_cut.machine2]:
-        machine.calendar.events = [e for e in machine.calendar.events if e.start < cut_time]
+        machine.calendar.events = [e for e in machine.calendar.events if e.end <= cut_time or (e.start <= cut_time and e.end > cut_time)]
         machine.free_at         = machine.calendar.events[-1].end if machine.calendar.events else 0
 
-    # 4. Filtrer les calendriers des stations
+    # Stations
     for station in new_state_after_cut.all_stations.stations:
-        station.calendar.events = [e for e in station.calendar.events if e.start < cut_time]
+        station.calendar.events = [e for e in station.calendar.events if e.end <= cut_time]  # ← e.end
         station.free_at         = station.calendar.events[-1].end if station.calendar.events else 0
         last_load               = next((e for e in reversed(station.calendar.events) if e.event_type == LOAD), None)
         last_unload             = next((e for e in reversed(station.calendar.events) if e.event_type == UNLOAD), None)
         if last_load and (last_unload is None or last_load.end > last_unload.end):
-            station.current_job = last_load.job
+            station.current_job = new_state_after_cut.get_job_by_id(last_load.job.id)  # ← get_job_by_id
         else:
             station.current_job = None
 
-    # 5. Filtrer les calendriers des jobs et recalculer leur status
+    # Jobs
     for j in new_state_after_cut.job_states:
-        j.calendar.events = [e for e in j.calendar.events if e.start < cut_time]
+        # Garder seulement les events terminés avant cut_time
+        j.calendar.events = [e for e in j.calendar.events if e.end <= cut_time]
         
-        if not j.calendar.events:
+        # Chercher un event en cours dans le state original
+        original_job      = state.get_job_by_id(j.id)
+        in_progress_event = next((e for e in original_job.calendar.events if e.start <= cut_time and e.end > cut_time), None)
+
+        if not j.calendar.events and in_progress_event is None:
             j.status          = NOT_YET
             j.location        = None
             j.current_station = None
@@ -321,38 +343,56 @@ def build_state_from_cut(state: State, cut_time: int) -> State:
                 o.remaining_time = o.operation.processing_time
                 o.start          = 0
                 o.end            = 0
+
+        elif in_progress_event is not None:
+            print(f"in_progress_event={EVENT_NAMES[in_progress_event.event_type]}, op={in_progress_event.operation.id if in_progress_event.operation else None}, end={in_progress_event.end}")
+            # Event en cours → IN_EXECUTION
+            j.status   = IN_EXECUTION
+            j.location = in_progress_event.dest
+            # Si c'est un MOVE → mettre à jour la location du robot
+            if in_progress_event.event_type == MOVE:
+                new_state_after_cut.robot.location = in_progress_event.dest
+            original_op = in_progress_event.operation
+            if original_op is not None and in_progress_event.event_type in {EXECUTE, HOLD, POS}:
+                # Trouver l'opération correspondante dans le JOB CLONÉ
+                cloned_op = j.get_operation(original_op.id)
+                if cloned_op is not None:
+                    cloned_op.status         = IN_EXECUTION
+                    cloned_op.remaining_time = max(0, in_progress_event.end - cut_time)
+                    for prev_o in j.operation_states:
+                        if prev_o.id < cloned_op.id:
+                            prev_o.remaining_time = 0
+                            prev_o.status         = DONE
+                    # ← NOUVEAU : ops suivantes → NOT_YET
+                    for next_o in j.operation_states:
+                        if next_o.id > cloned_op.id:
+                            next_o.remaining_time = next_o.operation.processing_time
+                            next_o.status         = NOT_YET
+            else:
+                # MOVE en cours → opération suivante NOT_YET
+                for op in j.operation_states:
+                    if op.start > 0 and op.end <= cut_time:
+                        op.remaining_time = 0
+                        op.status         = DONE
+                    else:
+                        op.remaining_time = op.operation.processing_time
+                        op.status         = NOT_YET
+
         else:
             last_event = j.calendar.events[-1]
-
-            if last_event.event_type == UNLOAD and last_event.end <= cut_time:
-                # Job complètement déchargé avant cut_time → DONE
-                j.status  = DONE
-                j.end     = last_event.end
-                j.delay   = max(0, j.end - j.job.due_date)
+            if last_event.event_type == UNLOAD:
+                j.status   = DONE
+                j.end      = last_event.end
+                j.delay    = max(0, j.end - j.job.due_date)
                 j.location = None
                 for o in j.operation_states:
                     o.remaining_time = 0
                     o.status         = DONE
-
-            elif last_event.event_type in {EXECUTE, HOLD} and last_event.start < cut_time:
-                # Opération en cours à cut_time → IN_EXECUTION
-                j.status          = IN_EXECUTION
-                j.location        = last_event.dest
-                o: OperationState = last_event.operation
-                o.status          = IN_EXECUTION
-                o.remaining_time  = max(0, last_event.end - cut_time)
-                # Opérations précédentes → DONE
-                for prev_o in j.operation_states:
-                    if prev_o.id < o.id:
-                        prev_o.remaining_time = 0
-                        prev_o.status         = DONE
-
             else:
-                # Job dans le système mais pas en exécution
                 j.status   = IN_SYSTEM
                 j.location = last_event.dest
                 for o in j.operation_states:
-                    if o.end > 0 and o.end <= cut_time:
+                    if o.start > 0 and o.end <= cut_time:
                         o.remaining_time = 0
                         o.status         = DONE
                     else:
@@ -360,6 +400,5 @@ def build_state_from_cut(state: State, cut_time: int) -> State:
                         o.status         = NOT_YET
 
     return new_state_after_cut
-
 
 # END OF FILE! ##########################################################################################

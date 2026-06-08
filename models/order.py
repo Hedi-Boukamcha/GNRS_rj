@@ -38,7 +38,7 @@ class OrderInstance:
         with open(path, 'r') as f:
             _data = json.load(f)
         orders = []
-        for order_data in _data["commandes"]:
+        for order_data in _data["orders"]:
             jobs = []
             for job_data in order_data["jobs"]:
                 operations = [Operation(type=op["type"], machineing_time=op["processing_time"]) for op in job_data["operations"]]

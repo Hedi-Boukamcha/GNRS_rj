@@ -28,7 +28,7 @@ class Job:
         self.blocked: int = blocked
     
     def __str__(self):
-        return f"{{'big':{self.big}, 'due_date':{self.due_date}, 'pos_time':{self.pos_time}, 'status':{self.status}, 'blocked':{self.blocked}, 'operations':{[o.__str__() for o in self.operations]}}}"
+        return f"{{'big':{self.big}, 'due_date':{self.due_date}, 'release_date':{self.release_date}, 'pos_time':{self.pos_time}, 'status':{self.status}, 'blocked':{self.blocked}, 'operations':{[o.__str__() for o in self.operations]}}}"
 
 class Instance:
     def __init__(self, jobs: list[Job] = [], n: int=0):

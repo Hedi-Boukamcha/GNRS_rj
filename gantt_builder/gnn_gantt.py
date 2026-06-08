@@ -23,7 +23,7 @@ def resource_calendars(state: State):
         # "Positioner": [e for e in state.machine1.calendar.events if e.event_type == POS],
     }
 
-def gnn_gantt(path: str, state: State, instance: str, bar_h: float = 0.8, min_bar_for_text: float = 5):
+def gnn_gantt(path: str, state: State, instance: str, cut_times: list[int] = [], bar_h: float = 0.8, min_bar_for_text: float = 5):
     calendars   = resource_calendars(state)
     level_index = {lvl: i for i, lvl in enumerate(GNN_GANTT_LEVELS)}
     tasks       = []
@@ -84,11 +84,26 @@ def gnn_gantt(path: str, state: State, instance: str, bar_h: float = 0.8, min_ba
         print("Aucun évènement à tracer.")
         return
 
+    # Compter les events qui partagent le même (level, start)
+    overlap_counter = {}
+    overlap_index   = {}
+    for t in tasks:
+        key = (t["level"], t["start"], t["end"])
+        overlap_counter[key] = overlap_counter.get(key, 0) + 1
+        overlap_index[key]   = 0
+
     # 3-c. Tracé des barres
     for t in tasks:
+        key = (t["level"], t["start"], t["end"])
+        nb       = overlap_counter[key]
+        idx      = overlap_index[key]
+        h        = bar_h / nb if nb > 1 else bar_h
+        y_offset = idx * h if nb > 1 else 0
+        overlap_index[key] += 1
+
         y = level_index[t["level"]]
-        ax.barh(y, t["dur"], left=t["start"],
-                height=bar_h, align="edge",
+        ax.barh(y + y_offset, t["dur"], left=t["start"],
+                height=h, align="edge",
                 color=t["color"], edgecolor="black")
 
         rot = 90 if t["label"] in {"move", "load", "unload"} else 0
@@ -98,7 +113,7 @@ def gnn_gantt(path: str, state: State, instance: str, bar_h: float = 0.8, min_ba
             x_text, ha = t["start"] + t["dur"]/2, "center"
         else:
             x_text, ha = t["end"] + 0.2, "left"
-        ax.text(x_text, y + bar_h/2, t["label"], rotation=rot, ha=ha, va="center", fontsize=7, fontweight=fw)
+        ax.text(x_text, y + y_offset + h/2, t["label"], rotation=rot, ha=ha, va="center", fontsize=7, fontweight=fw)
 
     # 3-d. Lignes de niveau
     for i in range(len(GNN_GANTT_LEVELS)):
@@ -115,18 +130,30 @@ def gnn_gantt(path: str, state: State, instance: str, bar_h: float = 0.8, min_ba
         job_id = job.id if job else -1
         color  = JOB_COLORS[job_id % len(JOB_COLORS)] if job else "#cccccc"
         y      = level_index[st]
-
         ax.add_patch(Rectangle((t_min, y), base_width, bar_h, facecolor=color, edgecolor="black", hatch="///", clip_on=False, zorder=3))
         ax.text(t_min + base_width/2, y + bar_h/2, "", rotation=90, ha="center", va="center",zorder=2)
     
+    # Lignes verticales cut_time
+    for ct in cut_times:
+        if ct > 0:
+            ax.axvline(x=ct, color='red', linestyle='--', linewidth=0.8, alpha=0.6, zorder=4)
+            ax.text(ct, len(GNN_GANTT_LEVELS) - 0.1, f"cut={ct}", color='red', fontsize=5, ha='center')
+
     # 3-e bis. Rectangles release date sur ligne Arrivals
-    bar_width = max(2, (t_max - t_min) * 0.01)
-    for j in state.job_states:
+    bar_width  = 0.5
+    rj_counter = {}  # compter les jobs par release_date
+    for idx, j in enumerate(state.job_states):
         rj    = j.job.release_date
         color = JOB_COLORS[j.id % len(JOB_COLORS)]
         y     = level_index["Arrivals"]
-        ax.add_patch(Rectangle((rj, y), 1, bar_h, facecolor=color, edgecolor="black", clip_on=False, zorder=5))
-        # ax.text(rj + bar_width / 2, y + bar_h / 2, f"J{j.id+1}", ha='center', va='center', fontsize=6, fontweight='bold', rotation=90)
+        
+        # Compter combien de jobs ont ce même release_date
+        rj_counter[rj] = rj_counter.get(rj, 0)
+        offset         = (rj_counter[rj] % 3) * (bar_h / 3)
+        rj_counter[rj] += 1
+        
+        ax.add_patch(Rectangle((rj, y + offset), bar_width, bar_h / 3, facecolor=color, edgecolor="black", clip_on=False, zorder=5))
+        ax.text(rj + bar_width / 2, y + offset + (bar_h / 6), f"J{j.id+1}", ha='center', va='center', fontsize=6, fontweight='bold', rotation=90)
     
     # 3-f. Axe X
     rj_times = [j.job.release_date for j in state.job_states]
