@@ -107,7 +107,7 @@ def search_best_station_and_load_job(state: State, j: JobState, forbidden_statio
 
 def load_job_into_station(state: State, job: JobState, station: StationState, L: int, start_loading_time: int):
     start_loading_time = max(start_loading_time, job.job.release_date)
-    loaded_time: int   = start_loading_time + L if station.calendar.has_events() else start_loading_time
+    loaded_time: int   = start_loading_time + L if (station.calendar.has_events() or start_loading_time > 0) else start_loading_time
     station.calendar.add(Event(start=start_loading_time, end=loaded_time, event_type=LOAD, job=job, station=station, source=state.all_stations, dest=state.all_stations))
     job.calendar.add(Event(start=start_loading_time, end=loaded_time, event_type=LOAD, job=job, station=station, source=state.all_stations, dest=state.all_stations))
     job.location        = state.all_stations

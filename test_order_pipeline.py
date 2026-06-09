@@ -9,6 +9,15 @@ from models.environment import Environment
 from gnn_solver import search_possible_decisions, take_one_step
 from conf import *
 
+# #######################################################
+# =*= TEST THE RESCHEDULING OF JOBS AFTER A CUT_TIME  =*=
+# #######################################################
+__author__  = "Hedi Boukamcha"
+__email__   = "hedi.boukamcha.1@ulaval.ca"
+__version__ = "2.0.0" 
+__license__ = "MIT"
+
+
 # 1. Charger une instance de commande
 order_instance = OrderInstance.load("data/orders_instances/test/s/instance_17.json")
 order_instance.display()
@@ -61,6 +70,5 @@ for order in order_instance.orders[1:]:
 
 cut_times = [o.cut_time for o in order_instance.orders if o.cut_time > 0]
 gnn_gantt("data/gantts/test_order_pipeline.png", env.state, "order pipeline test", cut_times=cut_times)
-
 
 # TEST WITH : python test_order_pipeline.py

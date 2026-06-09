@@ -8,6 +8,16 @@ from models.instance import Instance
 from gantt_builder.gnn_gantt import gnn_gantt
 from conf import *
 
+
+# ##########################################
+# =*= TEST THE IMPACT OF USING CUT_TIME  =*=
+# ##########################################
+__author__  = "Hedi Boukamcha"
+__email__   = "hedi.boukamcha.1@ulaval.ca"
+__version__ = "2.0.0" 
+__license__ = "MIT"
+
+
 order_instance = OrderInstance.load("data/orders_instances/test/s/instance_17.json")
 agent = Agent(device="cpu", interactive=False, load=True, path="data/training/", train=False, custom=True)
 
