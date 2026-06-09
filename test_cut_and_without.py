@@ -69,8 +69,9 @@ for order in order_instance.orders[1:]:
         action_id = agent.select_next_decision(graph=env.graph, decisionsT=env.decisionsT, greedy=True)
         env = take_one_step(agent=agent, last_env=env, action_id=action_id, device="cpu")
 
-print(f"Avec cut → Cmax={env.state.cmax}")
 cut_times = [o.cut_time for o in order_instance.orders if o.cut_time > 0]
+total_delay = sum(j.delay for j in env.state.job_states)
+print(f"Avec cut → Cmax={env.state.cmax} | Total Delay={total_delay}")
 gnn_gantt("data/gantts/avec_cut.png", env.state, "avec cut", cut_times=cut_times)
 
 # ===== CAS 2 : SANS CUT =====
@@ -86,5 +87,6 @@ while env2.possible_decisions:
     action_id = agent.select_next_decision(graph=env2.graph, decisionsT=env2.decisionsT, greedy=True)
     env2 = take_one_step(agent=agent, last_env=env2, action_id=action_id, device="cpu")
 
-print(f"Sans cut → Cmax={env2.state.cmax}")
+total_delay2 = sum(j.delay for j in env2.state.job_states)
+print(f"Sans cut → Cmax={env2.state.cmax} | Total Delay={total_delay2}")
 gnn_gantt("data/gantts/sans_cut.png", env2.state, "sans cut", cut_times=[])
