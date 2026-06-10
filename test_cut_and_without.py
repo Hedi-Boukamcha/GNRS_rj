@@ -36,7 +36,7 @@ while env.possible_decisions:
 
 for order in order_instance.orders[1:]:
     cut_time  = order.cut_time
-    print("\n=== Calendrier J1 avant cut ===")
+    """print("\n=== Calendrier J1 avant cut ===")
     for e in env.state.job_states[0].calendar.events:
         print(f"start={e.start}, end={e.end}, type={EVENT_NAMES[e.event_type]}, op={e.operation.id if e.operation else None}")
 
@@ -45,9 +45,9 @@ for order in order_instance.orders[1:]:
         print(f"start={e.start}, end={e.end}, type={EVENT_NAMES[e.event_type]}, op={e.operation.id if e.operation else None}")
     print("\n=== Calendrier J3 avant cut ===")
     for e in env.state.job_states[2].calendar.events:
-        print(f"start={e.start}, end={e.end}, type={EVENT_NAMES[e.event_type]}, op={e.operation.id if e.operation else None}")
+        print(f"start={e.start}, end={e.end}, type={EVENT_NAMES[e.event_type]}, op={e.operation.id if e.operation else None}")"""
     cut_state = build_state_from_cut(env.state, cut_time)
-    print(f"\n=== Calendrier J1 après cut={cut_time} ===")
+    """print(f"\n=== Calendrier J1 après cut={cut_time} ===")
     for e in cut_state.job_states[0].calendar.events:
         print(f"start={e.start}, end={e.end}, type={EVENT_NAMES[e.event_type]}, op={e.operation.id if e.operation else None}")
     print(f"\n=== Calendrier J3 après cut={cut_time} ===")
@@ -70,7 +70,7 @@ for order in order_instance.orders[1:]:
         print(f"start={e.start}, end={e.end}, type={EVENT_NAMES[e.event_type]}, dest={LOCATION_NAMES[e.dest.position_type] if e.dest else None}, job=J{e.job.id+1 if e.job else None}")
     print(f"Robot location={cut_state.robot.location}")
     print(f"Robot free_at={cut_state.robot.free_at}")
-    print(f"J3 location={cut_state.job_states[2].location}")
+    print(f"J3 location={cut_state.job_states[2].location}")"""
     cut_state.add_jobs_to_state(order.jobs)
     graph = cut_state.to_hyper_graph(last_job_in_pos=-1, current_time=cut_time, device="cpu")
     env   = Environment(graph=graph, state=cut_state, n=len(cut_state.job_states), action_time=cut_time)

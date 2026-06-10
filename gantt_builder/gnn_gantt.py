@@ -23,7 +23,7 @@ def resource_calendars(state: State):
         # "Positioner": [e for e in state.machine1.calendar.events if e.event_type == POS],
     }
 
-def gnn_gantt(path: str, state: State, instance: str, cut_times: list[int] = [], bar_h: float = 0.8, min_bar_for_text: float = 5):
+def gnn_gantt(path: str, state: State, instance: str, cut_times: list[int] = [], order_jobs: dict = {}, bar_h: float = 0.8, min_bar_for_text: float = 5):
     calendars   = resource_calendars(state)
     level_index = {lvl: i for i, lvl in enumerate(GNN_GANTT_LEVELS)}
     tasks       = []
@@ -155,6 +155,7 @@ def gnn_gantt(path: str, state: State, instance: str, cut_times: list[int] = [],
         ax.add_patch(Rectangle((rj, y + offset), bar_width, bar_h / 3, facecolor=color, edgecolor="black", clip_on=False, zorder=5))
         ax.text(rj + bar_width / 2, y + offset + (bar_h / 6), f"J{j.id+1}", ha='center', va='center', fontsize=6, fontweight='bold', rotation=90)
     
+
     # 3-f. Axe X
     rj_times = [j.job.release_date for j in state.job_states]
     times = sorted({p for t in tasks for p in (t["start"], t["end"])} | set(rj_times))

@@ -1,3 +1,4 @@
+from gantt_builder.gnn_gantt import gnn_gantt
 from models.order import OrderInstance
 from models.state import State, JobState
 from models.instance import Job
@@ -63,8 +64,17 @@ def evaluate_subset(state: State, subset: list[Job], cut_time: int, nb_existing:
     # 4. Calculer le total_tardiness des jobs EXISTANTS seulement (pas les nouveaux)
     nb_existing = len(state.job_states)
     tardiness_existants = sum(j.delay for j in env.state.job_states[:nb_existing])
-    print(f"    delays existants: {[j.delay for j in env.state.job_states[:nb_existing]]}")
-    print(f"    delays nouveaux: {[j.delay for j in env.state.job_states[nb_existing:]]}")
+    print(f"    tardiness existants: {[j.delay for j in env.state.job_states[:nb_existing]]}")
+    print(f"    tardiness nouveaux: {[j.delay for j in env.state.job_states[nb_existing:]]}")
+
+    # 5. Gantt pour ce subset
+    subset_label = "_".join([f"J{subset.index(j)+1}" for j in subset]) if subset else "empty"
+    gnn_gantt(
+        f"data/gantts/subset_{subset_label}_cut{cut_time}.png",
+        env.state,
+        f"subset={[f'J{i+1}' for i in range(len(subset))]} cut={cut_time}",
+        cut_times=[cut_time]
+    )
     
     return tardiness_existants, env.state.cmax
 
@@ -149,6 +159,10 @@ def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str,
         cut_time  = order.cut_time
         new_jobs  = order.jobs
 
+        # Gantt avant le cut
+        gnn_gantt(f"data/gantts/before_cut_{order.id}.png", env.state, f"before cut {order.id}", cut_times=[cut_time])
+
+
         print(f"\n=== Order {order.id} | cut_time={cut_time} | {len(new_jobs)} nouveaux jobs ===")
 
         # 3. Master Problem → choisir le meilleur sous-ensemble
@@ -159,8 +173,47 @@ def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str,
         print(f"  Jobs rejetés   : {[f'J{new_jobs.index(j)+1}(dd={j.due_date})' for j in new_jobs if j not in best_subset]}")
         print(f"  {len(best_subset)}/{len(new_jobs)} jobs acceptés")
 
+
         # 4. Reschedule avec le meilleur sous-ensemble
+        if len(best_subset) == 0:
+            print(f"  Aucun job accepté → planning original conservé")
+            continue
+
         cut_state = build_state_from_cut(env.state, cut_time)
+        cut_state.display_calendars()
+        cut_state.all_stations.stations[1].calendar.display_calendar("STATION 2")
+        gnn_gantt(f"data/gantts/after_cut_{order.id}.png", env.state, f"after cut {order.id}", cut_times=[cut_time])
+        #cut_state.robot.calendar.display_calendar("ROBOT après cut 3")
+        #cut_state.get_job_by_id(3).calendar.display_calendar("JOB 4 après cut 3")
+        #ut_state.all_stations.stations[2].calendar.display_calendar("STATION 3 après cut 3")
+        #j4 = cut_state.get_job_by_id(3)
+        #print(f"J4 status={j4.status}, location={j4.location}, end={j4.end}")
+        #cut_state.machine2.calendar.display_calendar("MACHINE 2 après cut 3")
+        """print(f"J4 current_station={cut_state.job_states[3].current_station}")
+        print(f"\n=== Calendriers Stations après cut={cut_time} ===")
+        for i, station in enumerate(cut_state.all_stations.stations):
+            print(f"Station {i+1} | free_at={station.free_at} | current_job={station.current_job.id+1 if station.current_job else None}")
+            for e in station.calendar.events:
+                print(f"  start={e.start}, end={e.end}, type={EVENT_NAMES[e.event_type]}, job=J{e.job.id+1 if e.job else None}")
+        print(f"J4 o1.is_last = {cut_state.job_states[3].operation_states[0].is_last}")
+        print(f"\n=== Calendriers après cut={cut_time} ===")
+        print(f"Robot free_at={cut_state.robot.free_at}, location={cut_state.robot.location}")
+        print(f"M1 free_at={cut_state.machine1.free_at}")
+        print(f"M2 free_at={cut_state.machine2.free_at}")"""
+        #for j in cut_state.job_states:
+            #print(f"Job {j.id+1} | status={j.status} | location={j.location} | ops={[(o.status, o.remaining_time) for o in j.operation_states]}")
+        
+        
+        """print(f"\n=== Calendrier J4 cut={cut_time} ===")
+        for e in cut_state.job_states[3].calendar.events:
+            print(f"start={e.start}, end={e.end}, type={EVENT_NAMES[e.event_type]}, op={e.operation.id if e.operation else None}")"""
+
+        #print(f"M1 free_at={cut_state.machine1.free_at}")
+        #print(f"M2 free_at={cut_state.machine2.free_at}")
+        #print(f"J2 status={cut_state.job_states[1].status} | location={cut_state.job_states[1].location}")
+        #print(f"J2 ops={[(o.status, o.remaining_time) for o in cut_state.job_states[1].operation_states]}")
+        #for j in cut_state.job_states:
+            #print(f"Job {j.id+1} | status={j.status} | location={j.location} | ops={[(o.status, o.remaining_time) for o in j.operation_states]}")
         cut_state.add_jobs_to_state(best_subset)
         graph     = cut_state.to_hyper_graph(last_job_in_pos=-1, current_time=cut_time, device=device)
         env       = Environment(graph=graph, state=cut_state, n=len(cut_state.job_states), action_time=cut_time)
@@ -169,6 +222,13 @@ def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str,
         while env.possible_decisions:
             action_id = agent.select_next_decision(graph=env.graph, decisionsT=env.decisionsT, greedy=True)
             env = take_one_step(agent=agent, last_env=env, action_id=action_id, device=device)
+
+        #print(f"\n=== État J4 après scheduling Order {order.id} ===")
+        #print(f"J4 status={env.state.job_states[3].status}")
+        #print(f"J4 ops={[(o.status, o.end, o.remaining_time) for o in env.state.job_states[3].operation_states]}")
+        #for e in env.state.job_states[3].calendar.events:
+            #print(f"  start={e.start}, end={e.end}, type={EVENT_NAMES[e.event_type]}")
+
 
         print(f"Order {order.id} schedulé | Cmax={env.state.cmax} | Tardiness={sum(j.delay for j in env.state.job_states)}")
 

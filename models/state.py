@@ -531,7 +531,7 @@ class JobState:
 
     def get_last_executed_operation(self) -> 'OperationState':
         for o in reversed(self.operation_states):
-            if o.remaining_time == 0:
+            if o.remaining_time == 0 or o.status == IN_EXECUTION:
                 return o
         return None
     

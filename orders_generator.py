@@ -56,14 +56,28 @@ def generate_order(
             last_type = chosen_type
             job["operations"].append(op)
 
+        # calcule du temps min necessaire pour traiter un job (somme de ces processing time + cout de transport total)
         proc_total     = sum(o["processing_time"] for o in job["operations"])
-        transport      = (2 * L + pos_time) + nb_operations * (2 * M)
+        """transport      = (2 * L + pos_time) + nb_operations * (2 * M)
         min_treat_time = proc_total + transport
 
         # release_date >= cut_time
-        borne_sup_release = max(0, min(due_date_max // 3, due_date - min_treat_time))
+        # release_date ne doit pas depasser due_date - min_treat_time
+        borne_sup_release = max(0, min(due_date_max // 3, due_date - min_treat_time)) 
+
         release_date      = random.randint(cut_time, max(cut_time, borne_sup_release))
+        job["release_date"] = release_date"""
+
+        transport      = (2 * L + pos_time) + nb_operations * (2 * M)
+        min_treat_time = proc_total + transport
+
+        borne_sup    = max(cut_time, due_date - min_treat_time)
+        release_date = random.randint(cut_time, borne_sup)
+        due_date     = max(due_date, release_date + min_treat_time)
+
+        job["due_date"]     = due_date
         job["release_date"] = release_date
+
 
         jobs.append(job)
     return jobs
