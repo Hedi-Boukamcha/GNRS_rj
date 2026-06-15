@@ -37,9 +37,23 @@ def compute_tardiness_ref(state: State, cut_time: int, agent: Agent, device: str
         env = take_one_step(agent=agent, last_env=env, action_id=action_id, device=device)
     
     # 3. Calculer le total_delay des jobs existants
-    tardiness_ref = sum(j.delay for j in state.job_states)
-    cmax_ref = state.cmax
-    return tardiness_ref, env.state.cmax
+    # tardiness_ref = sum(j.delay for j in state.job_states)
+    cost_ref = compute_weighted_tardiness(state.job_states)
+
+    return cost_ref, state.cmax
+
+# calculer les cout
+def compute_urgency_weight(j: JobState) -> float:
+    r = j.job.release_date
+    d = j.job.due_date
+    return 1.0 / (1.0 + max(0, d - r))
+
+# calculer les cout du retard
+def compute_weighted_tardiness(job_states: list[JobState]) -> float:
+    return sum(
+        compute_urgency_weight(j) * j.delay
+        for j in job_states
+    )
 
 # Evaluation des nouveaux jobs (sous ensembles): qq soit un seul job ou bien une combinaison de plusieurs jobs
 def evaluate_subset(state: State, subset: list[Job], new_jobs: list[Job], cut_time: int, nb_existing: int, agent: Agent, device: str) -> tuple[int, int]:
@@ -62,37 +76,27 @@ def evaluate_subset(state: State, subset: list[Job], new_jobs: list[Job], cut_ti
         action_id = agent.select_next_decision(graph=env.graph, decisionsT=env.decisionsT, greedy=True)
         env = take_one_step(agent=agent, last_env=env, action_id=action_id, device=device)
     
-    # 4. Calculer le total_tardiness des jobs EXISTANTS seulement (pas les nouveaux)
+    """# 4. Calculer le total_tardiness des jobs EXISTANTS seulement (pas les nouveaux)
     nb_existing = len(state.job_states)
-    tardiness_existants = sum(j.delay for j in env.state.job_states[:nb_existing])
+    #tardiness_existants = sum(j.delay for j in env.state.job_states[:nb_existing])
+    cost_existants = compute_weighted_tardiness(env.state.job_states[:nb_existing])
     print(f"    tardiness existants: {[j.delay for j in env.state.job_states[:nb_existing]]}")
-    print(f"    tardiness nouveaux: {[j.delay for j in env.state.job_states[nb_existing:]]}")
+    print(f"    tardiness nouveaux: {[j.delay for j in env.state.job_states[nb_existing:]]}")"""
+    # 4. Calculer le coût pondéré des jobs EXISTANTS seulement
+    nb_existing = len(state.job_states)
 
-    print("\n=== DEBUG JOB STATES SUBSET ===")
-    for j in env.state.job_states:
-        print(
-            f"\nJ{j.id+1}",
-            "| status =", j.status,
-            "| location =", j.location,
-            "| current_station =", j.current_station.id+1 if j.current_station else None,
-            "| delay =", j.delay,
-            "| end =", j.end
-        )
+    existing_jobs = env.state.job_states[:nb_existing]
+    new_jobs_states = env.state.job_states[nb_existing:]
 
-        print("operations:")
-        for o in j.operation_states:
-            print(
-                f"  op{o.id+1}",
-                "| status =", o.status,
-                "| is_last =", o.is_last,
-                "| start =", o.start,
-                "| end =", o.end,
-                "| remaining =", o.remaining_time
-            )
+    cost_existants = compute_weighted_tardiness(existing_jobs)
 
-        print("calendar:")
-        for e in j.calendar.events:
-            print(" ", e)
+    print(f"    tardiness existants: {[j.delay for j in existing_jobs]}")
+    print(f"    weights existants: {[round(compute_urgency_weight(j), 4) for j in existing_jobs]}")
+    print(f"    weighted tardiness existants: {[round(compute_urgency_weight(j) * j.delay, 4) for j in existing_jobs]}")
+    print(f"    cost_existants={cost_existants:.4f}")
+
+    print(f"    tardiness nouveaux: {[j.delay for j in new_jobs_states]}")
+
     # 5. Gantt pour ce subset
     subset_label = "_".join([f"J{new_jobs.index(j)+1}" for j in subset]) if subset else "empty"
     gnn_gantt(
@@ -102,7 +106,7 @@ def evaluate_subset(state: State, subset: list[Job], new_jobs: list[Job], cut_ti
         cut_times=[cut_time]
     )
     
-    return tardiness_existants, env.state.cmax
+    return cost_existants, env.state.cmax
 
 # Recherche en largeur des nouveaux jobs dans l'arbre
 def bfs_forward(state: State, new_jobs: list[Job], cut_time: int, agent: Agent, device: str, delta_ratio: float = 0.2) -> list[Job]:
@@ -113,13 +117,15 @@ def bfs_forward(state: State, new_jobs: list[Job], cut_time: int, agent: Agent, 
     nb_existing      = len(state.job_states)
     
     # 1. Calculer δ_ref et δ_max
-    tardiness_ref, cmax_ref = compute_tardiness_ref(state, cut_time, agent, device)
+    #tardiness_ref, cmax_ref = compute_tardiness_ref(state, cut_time, agent, device)
+    cost_ref, cmax_ref = compute_tardiness_ref(state, cut_time, agent, device)
+    cost_max = cost_ref * (1 + delta_ratio)
     # Si δ_ref=0, utiliser un seuil absolu basé sur le Cmax
-    if tardiness_ref == 0:
-        tardiness_max = cmax_ref * delta_ratio  # ex: 20% du Cmax comme tolérance
+    if cost_ref == 0:
+        cost_max = cmax_ref * delta_ratio  # ex: 20% du Cmax comme tolérance
     else:
-        tardiness_max = tardiness_ref * (1 + delta_ratio)
-    print(f"  δ_ref={tardiness_ref} | δ_max={tardiness_max:.1f}")
+        cost_max = cost_ref * (1 + delta_ratio)
+    print(f"  δ_ref={cost_ref} | δ_max={cost_max:.1f}")
 
     # 2. BFS : file de sous-ensembles à explorer
     best_subset  = []          # meilleur sous-ensemble trouvé
@@ -139,11 +145,12 @@ def bfs_forward(state: State, new_jobs: list[Job], cut_time: int, agent: Agent, 
         print(f"\n  → Subset={[f'J{new_jobs.index(j)+1}(dd={j.due_date})' for j in current_subset]} | size={len(current_subset)}")
 
         # Évaluer le sous-ensemble courant
-        tardiness_existants, cmax = evaluate_subset(state, current_subset, new_jobs, cut_time, nb_existing, agent, device)
-        print(f"     tardiness_existants={tardiness_existants} | δ_max={tardiness_max:.1f} | cmax={cmax}")
+        # tardiness_existants, cmax = evaluate_subset(state, current_subset, new_jobs, cut_time, nb_existing, agent, device)
+        cost_existants, cmax = evaluate_subset(state, current_subset, new_jobs, cut_time, nb_existing, agent, device)
+        print(f"     cost_existants={cost_existants} | δ_max={cost_max:.1f} | cmax={cmax}")
 
 
-        if tardiness_existants <= tardiness_max:
+        if cost_existants <= cost_max:
             print(f"     ✅ Valide → extension")
             if len(current_subset) > len(best_subset):
                 best_subset = current_subset
@@ -157,7 +164,7 @@ def bfs_forward(state: State, new_jobs: list[Job], cut_time: int, agent: Agent, 
                     queue.append(current_subset + [job])
         # Sinon → élaguer
         else:
-            print(f"     ❌ Élagué (tardiness={tardiness_existants} > δ_max={tardiness_max:.1f})")
+            print(f"     ❌ Élagué (tardiness={cost_existants} > δ_max={cost_max:.1f})")
     return best_subset
 
 def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str, delta_ratio: float = 0.2) -> State:

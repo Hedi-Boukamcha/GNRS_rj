@@ -4,7 +4,7 @@ from acceptation_method import acceptation_method
 from gantt_builder.gnn_gantt import gnn_gantt
 from conf import *
 
-order_instance = OrderInstance.load("data/orders_instances/test/xl/instance_1.json")
+order_instance = OrderInstance.load("data/orders_instances/test/s/instance_25.json")
 agent          = Agent(device="cpu", interactive=False, load=True, path="data/training/", train=False, custom=True)
 
 final_state = acceptation_method(order_instance, agent, device="cpu", delta_ratio=0.0)
