@@ -29,12 +29,12 @@ def generate_order(
     for _ in range(numbre_jobs):
         nb_operations = random.randint(1, max_operations_per_job)
         last_type     = None
-        due_date_max  = (2 * L + pos_time) * numbre_jobs + nb_operations * (2 * M + 60)
-        borne_inf     = max(due_date_min, due_date_max // 3)
-        due_date      = random.randint(borne_inf, due_date_max)
+        #due_date_max  = (2 * L + pos_time) * numbre_jobs + nb_operations * (2 * M + 60)
+        #borne_inf     = max(due_date_min, due_date_max // 3)
+        #due_date      = random.randint(borne_inf, due_date_max)
 
         # Shift due_date to be >= cut_time
-        due_date = max(due_date, cut_time + due_date_min)
+        #due_date = max(due_date, cut_time + due_date_min)
 
         job = {
             "big"      : random.randint(0, 1),
@@ -56,8 +56,7 @@ def generate_order(
             last_type = chosen_type
             job["operations"].append(op)
 
-        # calcule du temps min necessaire pour traiter un job (somme de ces processing time + cout de transport total)
-        proc_total     = sum(o["processing_time"] for o in job["operations"])
+        
         """transport      = (2 * L + pos_time) + nb_operations * (2 * M)
         min_treat_time = proc_total + transport
 
@@ -68,12 +67,14 @@ def generate_order(
         release_date      = random.randint(cut_time, max(cut_time, borne_sup_release))
         job["release_date"] = release_date"""
 
+        # calcule du temps min necessaire pour traiter un job (somme de ces processing time + cout de transport total)
+        proc_total     = sum(o["processing_time"] for o in job["operations"])
         transport      = (2 * L + pos_time) + nb_operations * (2 * M)
         min_treat_time = proc_total + transport
 
-        borne_sup    = max(cut_time, due_date - min_treat_time)
-        release_date = random.randint(cut_time, borne_sup)
-        due_date     = max(due_date, release_date + min_treat_time)
+        borne_sup_release    = cut_time + random.randint(0, 50)
+        release_date = random.randint(cut_time, borne_sup_release)
+        due_date = release_date + min_treat_time + random.randint(10, 80)
 
         job["due_date"]     = due_date
         job["release_date"] = release_date
@@ -115,9 +116,9 @@ def generate_one_instance(
             "jobs"    : jobs
         })
 
-        # Next cut_time = current cut_time + fraction of UB_cmax of this order
-        UB_cmax   = (2 * L + pos_time) * numbre_jobs_per_order + max_operations_per_job * (2 * M + max_duration)
-        cut_time += int(UB_cmax * random.uniform(0.3, 0.7))
+        # Next cut_time = current cut_time + fraction of estimated_cmax of this order
+        estimated_cmax   = (2 * L + pos_time) * numbre_jobs_per_order + max_operations_per_job * (2 * M + max_duration)
+        cut_time += int(estimated_cmax * random.uniform(0.3, 0.7))
 
     return {'a': random.randint(0, 10) * 10, 'orders': orders}
 

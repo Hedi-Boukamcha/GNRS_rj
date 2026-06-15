@@ -99,7 +99,7 @@ def bfs_forward(state: State, new_jobs: list[Job], cut_time: int, agent: Agent, 
     best_subset  = []          # meilleur sous-ensemble trouvé
     best_cmax   = float('inf')
     visited      = set()       # sous-ensembles déjà évalués (déduplication)
-    queue        = [[]]        # on commence par ∅
+    queue        = [[]]        # on commence par ensemble
 
     while queue:
         current_subset = queue.pop(0)  # ← garder seulement celui-ci
@@ -110,7 +110,7 @@ def bfs_forward(state: State, new_jobs: list[Job], cut_time: int, agent: Agent, 
             continue
         visited.add(key)
 
-        print(f"\n  → Subset={[f'J{new_jobs.index(j)+1}(dd={j.due_date})' for j in current_subset]} | size={len(current_subset)} | queue={len(queue)}")
+        print(f"\n  → Subset={[f'J{new_jobs.index(j)+1}(dd={j.due_date})' for j in current_subset]} | size={len(current_subset)}")
 
         # Évaluer le sous-ensemble courant
         tardiness_existants, cmax = evaluate_subset(state, current_subset, cut_time, nb_existing, agent, device)
@@ -180,8 +180,8 @@ def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str,
             continue
 
         cut_state = build_state_from_cut(env.state, cut_time)
-        cut_state.display_calendars()
-        cut_state.all_stations.stations[1].calendar.display_calendar("STATION 2")
+        #cut_state.display_calendars()
+        #cut_state.all_stations.stations[1].calendar.display_calendar("STATION 2")
         gnn_gantt(f"data/gantts/after_cut_{order.id}.png", env.state, f"after cut {order.id}", cut_times=[cut_time])
         #cut_state.robot.calendar.display_calendar("ROBOT après cut 3")
         #cut_state.get_job_by_id(3).calendar.display_calendar("JOB 4 après cut 3")

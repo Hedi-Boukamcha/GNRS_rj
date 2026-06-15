@@ -104,6 +104,13 @@ def take_one_step(agent: Agent, last_env: Environment, action_id: int, device: s
         if next_env.state.get_job_by_id(d.job_id).operation_states[d.operation_id].operation.type == MACHINE_2:
             next_env.m2 += 1
     next_env.state         = simulate(next_env.state, d=d, clone=False)
+    # Après une décision M2 parallèle, step 10 de simulate peut avoir déchargé définitivement
+    # le job positionné sur M1 — réinitialiser last_job_in_pos pour éviter un 2e rollback parasite.
+    if d.parallel and d.machine == MACHINE_2 and next_env.last_job_in_pos >= 0:
+        m1_job = next_env.state.get_job_by_id(next_env.last_job_in_pos)
+        if m1_job is not None and m1_job.is_done():
+            next_env.last_job_in_pos  = -1
+            next_env.next_M2_parallel = False
     next_graph: HeteroData = next_env.state.to_hyper_graph(last_job_in_pos=next_env.last_job_in_pos, current_time=next_env.action_time, device=device)
     next_possible_decisions, next_decisionT = search_possible_decisions(env=next_env, device=device)
     if train:

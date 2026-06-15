@@ -18,7 +18,7 @@ __version__ = "2.0.0"
 __license__ = "MIT"
 
 
-order_instance = OrderInstance.load("data/orders_instances/test/s/instance_17.json")
+order_instance = OrderInstance.load("data/orders_instances/test/s/instance_4.json")
 agent = Agent(device="cpu", interactive=False, load=True, path="data/training/", train=False, custom=True)
 
 # ===== CAS 1 : AVEC CUT =====
@@ -36,41 +36,9 @@ while env.possible_decisions:
 
 for order in order_instance.orders[1:]:
     cut_time  = order.cut_time
-    """print("\n=== Calendrier J1 avant cut ===")
-    for e in env.state.job_states[0].calendar.events:
-        print(f"start={e.start}, end={e.end}, type={EVENT_NAMES[e.event_type]}, op={e.operation.id if e.operation else None}")
-
-    print("\n=== Calendrier J2 avant cut ===")
-    for e in env.state.job_states[1].calendar.events:
-        print(f"start={e.start}, end={e.end}, type={EVENT_NAMES[e.event_type]}, op={e.operation.id if e.operation else None}")
-    print("\n=== Calendrier J3 avant cut ===")
-    for e in env.state.job_states[2].calendar.events:
-        print(f"start={e.start}, end={e.end}, type={EVENT_NAMES[e.event_type]}, op={e.operation.id if e.operation else None}")"""
     cut_state = build_state_from_cut(env.state, cut_time)
-    """print(f"\n=== Calendrier J1 après cut={cut_time} ===")
-    for e in cut_state.job_states[0].calendar.events:
-        print(f"start={e.start}, end={e.end}, type={EVENT_NAMES[e.event_type]}, op={e.operation.id if e.operation else None}")
-    print(f"\n=== Calendrier J3 après cut={cut_time} ===")
-    for e in cut_state.job_states[2].calendar.events:
-        print(f"start={e.start}, end={e.end}, type={EVENT_NAMES[e.event_type]}, op={e.operation.id if e.operation else None}")
-    print(f"\n=== Calendrier Station 3 après cut={cut_time} ===")
-    for e in cut_state.all_stations.get(STATION_3).calendar.events:
-        print(f"start={e.start}, end={e.end}, type={EVENT_NAMES[e.event_type]}, job=J{e.job.id+1 if e.job else None}")
-    print(f"\n=== État après cut={cut_time}")
-    for j in cut_state.job_states:
-        print(f"Job {j.id+1} | status={j.status} | location={j.location} | ops={[(o.status, o.remaining_time) for o in j.operation_states]}")
-    print(f"\n=== État après cut={cut_time} ===")
-    print(f"Robot free_at={cut_state.robot.free_at}")
-    print(f"M1 free_at={cut_state.machine1.free_at}")
-    print(f"M2 free_at={cut_state.machine2.free_at}")
-    for j in cut_state.job_states:
-        print(f"Job {j.id+1} | status={j.status} | location={j.location} | ops={[(o.status, o.remaining_time) for o in j.operation_states]}")
-    print("\n=== Calendrier Robot avant cut ===")
-    for e in env.state.robot.calendar.events:
-        print(f"start={e.start}, end={e.end}, type={EVENT_NAMES[e.event_type]}, dest={LOCATION_NAMES[e.dest.position_type] if e.dest else None}, job=J{e.job.id+1 if e.job else None}")
-    print(f"Robot location={cut_state.robot.location}")
-    print(f"Robot free_at={cut_state.robot.free_at}")
-    print(f"J3 location={cut_state.job_states[2].location}")"""
+    j1 = cut_state.get_job_by_id(0)
+    print(f"J1 status={j1.status}, location={j1.location}, ops={[(o.status, o.remaining_time) for o in j1.operation_states]}")
     cut_state.add_jobs_to_state(order.jobs)
     graph = cut_state.to_hyper_graph(last_job_in_pos=-1, current_time=cut_time, device="cpu")
     env   = Environment(graph=graph, state=cut_state, n=len(cut_state.job_states), action_time=cut_time)
@@ -83,6 +51,10 @@ cut_times = [o.cut_time for o in order_instance.orders if o.cut_time > 0]
 total_delay = sum(j.delay for j in env.state.job_states)
 print(f"Avec cut → Cmax={env.state.cmax} | Total Delay={total_delay}")
 gnn_gantt("data/gantts/avec_cut.png", env.state, "avec cut", cut_times=cut_times)
+
+# Afficher tous les calendriers
+env.state.display_calendars()
+
 
 # ===== CAS 2 : SANS CUT =====
 all_jobs = [j for o in order_instance.orders for j in o.jobs]
@@ -100,3 +72,4 @@ while env2.possible_decisions:
 total_delay2 = sum(j.delay for j in env2.state.job_states)
 print(f"Sans cut → Cmax={env2.state.cmax} | Total Delay={total_delay2}")
 gnn_gantt("data/gantts/sans_cut.png", env2.state, "sans cut", cut_times=[])
+env2.state.display_calendars()

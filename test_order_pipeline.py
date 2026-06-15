@@ -19,7 +19,7 @@ __license__ = "MIT"
 
 
 # 1. Charger une instance de commande
-order_instance = OrderInstance.load("data/orders_instances/test/s/instance_17.json")
+order_instance = OrderInstance.load("data/orders_instances/test/s/instance_1.json")
 order_instance.display()
 
 # 2. Scheduler la première commande (cut_time=0, commande initiale a t=0)
@@ -37,8 +37,8 @@ while env.possible_decisions:
     env = take_one_step(agent=agent, last_env=env, action_id=action_id, device="cpu")
 
 print(f"\n=== Order 1 schedulé | Cmax={env.state.cmax} ===")
-for j in env.state.job_states:
-    print(f"Job {j.id+1} | status={j.status} | release_date={j.job.release_date}")
+"""for j in env.state.job_states:
+    print(f"Job {j.id+1} | status={j.status} | release_date={j.job.release_date}")"""
 
 # 3. Pour chaque ordre suivant
 for order in order_instance.orders[1:]:
@@ -47,15 +47,15 @@ for order in order_instance.orders[1:]:
 
     # 4. Reconstruire l'état au cut_time
     cut_state = build_state_from_cut(env.state, cut_time)
-    print(f"Robot free_at={cut_state.robot.free_at}")
+    """print(f"Robot free_at={cut_state.robot.free_at}")
     for j in cut_state.job_states:
-        print(f"Job {j.id+1} | status={j.status} | remaining={sum(o.remaining_time for o in j.operation_states)}")
+        print(f"Job {j.id+1} | status={j.status} | remaining={sum(o.remaining_time for o in j.operation_states)}")"""
 
     # 5. Ajouter les nouveaux jobs
     cut_state.add_jobs_to_state(order.jobs)
-    print(f"\n=== Après ajout des {len(order.jobs)} nouveaux jobs ===")
+    """print(f"\n=== Après ajout des {len(order.jobs)} nouveaux jobs ===")
     for j in cut_state.job_states:
-        print(f"Job {j.id+1} | status={j.status} | release_date={j.job.release_date}")
+        print(f"Job {j.id+1} | status={j.status} | release_date={j.job.release_date}")"""
 
     # 6. GNN reschedule
     graph = cut_state.to_hyper_graph(last_job_in_pos=-1, current_time=cut_time, device="cpu")

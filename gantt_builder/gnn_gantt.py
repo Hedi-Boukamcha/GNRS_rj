@@ -76,9 +76,7 @@ def gnn_gantt(path: str, state: State, instance: str, cut_times: list[int] = [],
             color  = JOB_COLORS[job_id % len(JOB_COLORS)] + "44"
             if e.event_type == AWAIT:
                 ax.add_patch(Rectangle((e.start, level_index[lvl]), e.end-e.start, bar_h, facecolor=color, edgecolor="#00000022", hatch="///", clip_on=False, zorder=3))
-            if lvl=="Robot" and e.event_type == MOVE:
-                ax.add_patch(Rectangle((e.start, level_index["Robot"]), e.end-e.start, bar_h, facecolor=color, edgecolor="#FFFFFF1F", linewidth=0, hatch="xxx", clip_on=False, zorder=2))
-
+            
 
     if not tasks:
         print("Aucun évènement à tracer.")
