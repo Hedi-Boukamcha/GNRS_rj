@@ -213,7 +213,7 @@ def previous_job_back_to_station(state: State, robot: RobotState, j: JobState, m
     if machine.calendar.has_events():
         previous_job: JobState = machine.calendar.get(-1).job
         previous_op: OperationState = machine.calendar.get(-1).operation
-        print("\nDEBUG previous_job_back_to_station")
+        """print("\nDEBUG previous_job_back_to_station")
         print("target job =", j.id + 1)
         print("machine =", machine.position_type)
         print("previous_job =", previous_job.id + 1 if previous_job else None)
@@ -221,10 +221,10 @@ def previous_job_back_to_station(state: State, robot: RobotState, j: JobState, m
         print("previous_job.location =", previous_job.location if previous_job else None)
         print("previous_job.status =", previous_job.status if previous_job else None)
         print("previous_job last event =", previous_job.calendar.get_last_event() if previous_job and previous_job.calendar.has_events() else None)
-        print("machine last event =", machine.calendar.get(-1))
+        print("machine last event =", machine.calendar.get(-1))"""
         #print(f"  previous_job_back_to_station: machine={machine.position_type}, previous_job=J{previous_job.id+1}, current_j=J{j.id+1}")
         if previous_job.id != j.id and previous_job.location is not None and previous_job.location.position_type == machine.position_type:
-            print("=> MOVE PREVIOUS JOB BACK TO STATION")
+            #print("=> MOVE PREVIOUS JOB BACK TO STATION")
             return robot_move_job_to_station(state, robot, previous_job, previous_op, machine, M)
         
 def simulate_station_min_free_at(robot: RobotState, j: JobState, o: OperationState, M: int, L: int, time_end_of_execution: int) -> int:
