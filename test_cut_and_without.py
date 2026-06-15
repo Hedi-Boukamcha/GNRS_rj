@@ -18,7 +18,7 @@ __version__ = "2.0.0"
 __license__ = "MIT"
 
 
-order_instance = OrderInstance.load("data/orders_instances/test/s/instance_4.json")
+order_instance = OrderInstance.load("data/orders_instances/test/s/instance_7.json")
 agent = Agent(device="cpu", interactive=False, load=True, path="data/training/", train=False, custom=True)
 
 # ===== CAS 1 : AVEC CUT =====

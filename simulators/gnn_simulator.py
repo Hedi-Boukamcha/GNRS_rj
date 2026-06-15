@@ -35,7 +35,7 @@ def simulate(previous_state: State, d: Decision, clone: bool=False) -> State:
         free_positioner(state, robot, M, current_job=j.id)
 
     # 5. Move the robot if its not at already at job location
-    robot_move_to_job(j, o, robot, M)
+    robot_move_to_job(state, j, o, robot, M)
 
     # 6. Robot moves job to target machine
     target_job_at_machine_time: int = robot_move_to_machine(j, o, robot, machine, M, job_ready_time=target_job_ready_time)
@@ -240,7 +240,7 @@ def simulate_station_min_free_at(robot: RobotState, j: JobState, o: OperationSta
 def robot_move_job_to_station(state: State, robot: RobotState, j: JobState, o: OperationState, machine: Machine, M: int):
     #print(f"  robot_move_job_to_station: J{j.id+1}, robot.free_at={robot.free_at}")
     #print(f"  [move_job_to_station] J{j.id+1}, robot.location={robot.location.position_type}, robot.free_at={robot.free_at}")
-    robot_move_to_job(j, o, robot, M)
+    robot_move_to_job(state, j, o, robot, M)
     time            = max(o.end, robot.free_at, machine.free_at)
     #print(f"  [move_job_to_station] ajout move dans robot: job=J{j.id+1}, start={time}, end={time+M}")    
     robot.calendar.add(Event(start=time, end=(time + M), event_type=MOVE, job=j, source=machine, dest=state.all_stations, operation=o, station=j.current_station))
@@ -314,7 +314,28 @@ def execute_operation(j: JobState, o: OperationState, robot: RobotState, machine
     o.remaining_time    = 0
     return time
 
-def robot_move_to_job(j: JobState, o: OperationState, robot: RobotState, M: int):
+def robot_move_to_job(state: State, j: JobState, o: OperationState, robot: RobotState, M: int):
+    if robot.calendar.has_events():
+        last_event = robot.calendar.get_last_event()
+
+        if (
+            last_event.event_type == HOLD
+            and last_event.job is not None
+            and last_event.job.id != j.id
+        ):
+            held_job = last_event.job
+            held_op = last_event.operation
+            held_machine = last_event.dest
+
+            # Le robot ne peut pas partir vers j tant qu'il tient held_job.
+            robot_move_job_to_station(
+                state,
+                robot,
+                held_job,
+                held_op,
+                held_machine,
+                M
+            )
     if robot.location  != j.location:
         # Vérifier si le robot est déjà en route vers ce job
         if robot.calendar.has_events() and robot.calendar.get_last_event().dest == j.location:
