@@ -38,7 +38,7 @@ for order in order_instance.orders[1:]:
     cut_time  = order.cut_time
     cut_state = build_state_from_cut(env.state, cut_time)
     j1 = cut_state.get_job_by_id(0)
-    print(f"J1 status={j1.status}, location={j1.location}, ops={[(o.status, o.remaining_time) for o in j1.operation_states]}")
+    #print(f"J1 status={j1.status}, location={j1.location}, ops={[(o.status, o.remaining_time) for o in j1.operation_states]}")
     cut_state.add_jobs_to_state(order.jobs)
     graph = cut_state.to_hyper_graph(last_job_in_pos=-1, current_time=cut_time, device="cpu")
     env   = Environment(graph=graph, state=cut_state, n=len(cut_state.job_states), action_time=cut_time)

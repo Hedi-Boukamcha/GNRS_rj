@@ -65,8 +65,8 @@ def simulate(previous_state: State, d: Decision, clone: bool=False) -> State:
         unloading_time_target = unload(state, j, o, L, unloading_start=robot.free_at)
         #print(f"  après unload, robot.free_at={robot.free_at}")
     else:
-        if not parallel:
-            robot_move_job_to_station(state, robot, j, o, machine, M)
+        """if not parallel:
+            robot_move_job_to_station(state, robot, j, o, machine, M)"""
         unloading_time_target = simulate_station_min_free_at(state.robot, j, o, state.M, state.L, time_end_of_execution)
 
     # 10. If a parallel job was waiting (to be unloaded) on the positioner, unload it
@@ -213,8 +213,18 @@ def previous_job_back_to_station(state: State, robot: RobotState, j: JobState, m
     if machine.calendar.has_events():
         previous_job: JobState = machine.calendar.get(-1).job
         previous_op: OperationState = machine.calendar.get(-1).operation
+        print("\nDEBUG previous_job_back_to_station")
+        print("target job =", j.id + 1)
+        print("machine =", machine.position_type)
+        print("previous_job =", previous_job.id + 1 if previous_job else None)
+        print("previous_op =", previous_op.id + 1 if previous_op else None)
+        print("previous_job.location =", previous_job.location if previous_job else None)
+        print("previous_job.status =", previous_job.status if previous_job else None)
+        print("previous_job last event =", previous_job.calendar.get_last_event() if previous_job and previous_job.calendar.has_events() else None)
+        print("machine last event =", machine.calendar.get(-1))
         #print(f"  previous_job_back_to_station: machine={machine.position_type}, previous_job=J{previous_job.id+1}, current_j=J{j.id+1}")
         if previous_job.id != j.id and previous_job.location is not None and previous_job.location.position_type == machine.position_type:
+            print("=> MOVE PREVIOUS JOB BACK TO STATION")
             return robot_move_job_to_station(state, robot, previous_job, previous_op, machine, M)
         
 def simulate_station_min_free_at(robot: RobotState, j: JobState, o: OperationState, M: int, L: int, time_end_of_execution: int) -> int:
@@ -317,17 +327,34 @@ def robot_move_to_job(j: JobState, o: OperationState, robot: RobotState, M: int)
 
 def robot_move_to_machine(j: JobState, o: OperationState, robot: RobotState, machine: Machine, M: int, job_ready_time: int) -> int:
     time = max(job_ready_time, robot.free_at, machine.free_at)
-    if robot.location != machine:  # ← NOUVEAU : ne pas ajouter de move si déjà sur la machine
+
+    if j.status == DONE or j.location is None:
+        print(
+            f"WARNING robot_move_to_machine ignored for J{j.id+1}:",
+            "status =", j.status,
+            "location =", j.location,
+            "operation =", o.id + 1
+        )
+        return time
+
+    if robot.location != machine:
         s: StationState = j.current_station if j.location.position_type == POS_STATION else None
+
         robot.calendar.add(Event(start=time, end=(time + M), event_type=MOVE, job=j, source=robot.location, dest=machine, operation=o, station=s))
         j.calendar.add(Event(start=time, end=(time + M), event_type=MOVE, job=j, source=robot.location, dest=machine, operation=o, station=s))
-        robot.location  = machine
-        j.location      = machine
-        time           += M
-        robot.free_at   = time
+
+        robot.location = machine
+        j.location = machine
+        time += M
+        robot.free_at = time
+
     else:
         robot.location = machine
-        j.location     = machine
+
+        # Seulement si le job est physiquement déjà avec le robot / encore actif
+        if j.status != DONE and j.location is not None:
+            j.location = machine
+
     return time
 
 def position_job(j: JobState, o: OperationState, robot: RobotState, machine: Machine, time: int) -> int:
@@ -421,10 +448,19 @@ def _fix_robot_held_job(new_state: State, cut_time: int):
                 held_station.free_at     = unload_end
                 held_station.current_job = None
 
-            held_job.status  = DONE
-            held_job.end     = unload_end
-            held_job.delay   = max(0, unload_end - held_job.job.due_date)
-            new_state.robot.free_at = unload_end
+            held_job.status   = DONE
+            held_job.end      = unload_end
+            held_job.delay    = max(0, unload_end - held_job.job.due_date)
+            held_job.location = None
+
+            if last_op:
+                last_op.status = DONE
+                last_op.remaining_time = 0
+
+            # Le robot n'intervient pas dans l'unload.
+            # Il est libre dès qu'il a ramené le job à la station.
+            new_state.robot.free_at = return_time
+            new_state.robot.location = new_state.all_stations
 
         new_state.robot.current_job = None
     else:
