@@ -37,11 +37,12 @@ def compute_tardiness_ref(state: State, cut_time: int, agent: Agent, device: str
         env = take_one_step(agent=agent, last_env=env, action_id=action_id, device=device)
     
     # 3. Calculer le total_delay des jobs existants
-    tardiness_ref = sum(j.delay for j in env.state.job_states)
+    tardiness_ref = sum(j.delay for j in state.job_states)
+    cmax_ref = state.cmax
     return tardiness_ref, env.state.cmax
 
 # Evaluation des nouveaux jobs (sous ensembles): qq soit un seul job ou bien une combinaison de plusieurs jobs
-def evaluate_subset(state: State, subset: list[Job], cut_time: int, nb_existing: int, agent: Agent, device: str) -> tuple[int, int]:
+def evaluate_subset(state: State, subset: list[Job], new_jobs: list[Job], cut_time: int, nb_existing: int, agent: Agent, device: str) -> tuple[int, int]:
     """
     Reschedule le pool existant + le sous-ensemble S.
     Retourne (total_delay_existants, cmax).
@@ -67,12 +68,37 @@ def evaluate_subset(state: State, subset: list[Job], cut_time: int, nb_existing:
     print(f"    tardiness existants: {[j.delay for j in env.state.job_states[:nb_existing]]}")
     print(f"    tardiness nouveaux: {[j.delay for j in env.state.job_states[nb_existing:]]}")
 
+    print("\n=== DEBUG JOB STATES SUBSET ===")
+    for j in env.state.job_states:
+        print(
+            f"\nJ{j.id+1}",
+            "| status =", j.status,
+            "| location =", j.location,
+            "| current_station =", j.current_station.id+1 if j.current_station else None,
+            "| delay =", j.delay,
+            "| end =", j.end
+        )
+
+        print("operations:")
+        for o in j.operation_states:
+            print(
+                f"  op{o.id+1}",
+                "| status =", o.status,
+                "| is_last =", o.is_last,
+                "| start =", o.start,
+                "| end =", o.end,
+                "| remaining =", o.remaining_time
+            )
+
+        print("calendar:")
+        for e in j.calendar.events:
+            print(" ", e)
     # 5. Gantt pour ce subset
-    subset_label = "_".join([f"J{subset.index(j)+1}" for j in subset]) if subset else "empty"
+    subset_label = "_".join([f"J{new_jobs.index(j)+1}" for j in subset]) if subset else "empty"
     gnn_gantt(
         f"data/gantts/subset_{subset_label}_cut{cut_time}.png",
         env.state,
-        f"subset={[f'J{i+1}' for i in range(len(subset))]} cut={cut_time}",
+        f"subset={[f'J{new_jobs.index(j)+1}' for j in subset]} cut={cut_time}",
         cut_times=[cut_time]
     )
     
@@ -99,7 +125,7 @@ def bfs_forward(state: State, new_jobs: list[Job], cut_time: int, agent: Agent, 
     best_subset  = []          # meilleur sous-ensemble trouvé
     best_cmax   = float('inf')
     visited      = set()       # sous-ensembles déjà évalués (déduplication)
-    queue        = [[]]        # on commence par ensemble
+    queue        = [[job] for job in new_jobs]        # on commence par ensemble
 
     while queue:
         current_subset = queue.pop(0)  # ← garder seulement celui-ci
@@ -113,7 +139,7 @@ def bfs_forward(state: State, new_jobs: list[Job], cut_time: int, agent: Agent, 
         print(f"\n  → Subset={[f'J{new_jobs.index(j)+1}(dd={j.due_date})' for j in current_subset]} | size={len(current_subset)}")
 
         # Évaluer le sous-ensemble courant
-        tardiness_existants, cmax = evaluate_subset(state, current_subset, cut_time, nb_existing, agent, device)
+        tardiness_existants, cmax = evaluate_subset(state, current_subset, new_jobs, cut_time, nb_existing, agent, device)
         print(f"     tardiness_existants={tardiness_existants} | δ_max={tardiness_max:.1f} | cmax={cmax}")
 
 
@@ -132,7 +158,6 @@ def bfs_forward(state: State, new_jobs: list[Job], cut_time: int, agent: Agent, 
         # Sinon → élaguer
         else:
             print(f"     ❌ Élagué (tardiness={tardiness_existants} > δ_max={tardiness_max:.1f})")
-
     return best_subset
 
 def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str, delta_ratio: float = 0.2) -> State:
