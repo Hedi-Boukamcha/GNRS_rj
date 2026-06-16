@@ -99,14 +99,15 @@ def evaluate_subset(state: State, subset: list[Job], new_jobs: list[Job], cut_ti
 
     # 5. Gantt pour ce subset
     subset_label = "_".join([f"J{new_jobs.index(j)+1}" for j in subset]) if subset else "empty"
-    gnn_gantt(
+    """gnn_gantt(
         f"data/gantts/subset_{subset_label}_cut{cut_time}.png",
         env.state,
         f"subset={[f'J{new_jobs.index(j)+1}' for j in subset]} cut={cut_time}",
         cut_times=[cut_time]
-    )
+    )"""
     
     return cost_existants, env.state.cmax
+
 
 # Recherche en largeur des nouveaux jobs dans l'arbre
 def bfs_forward(state: State, new_jobs: list[Job], cut_time: int, agent: Agent, device: str, delta_ratio: float = 0.2) -> list[Job]:
@@ -131,16 +132,30 @@ def bfs_forward(state: State, new_jobs: list[Job], cut_time: int, agent: Agent, 
     best_subset  = []          # meilleur sous-ensemble trouvé
     best_cmax   = float('inf')
     visited      = set()       # sous-ensembles déjà évalués (déduplication)
-    queue        = [[job] for job in new_jobs]        # on commence par ensemble
+    queue        = [[job] for job in new_jobs]        # on commence par le premier job de la commande
+    pruned_subsets = set()
+
+    # ne pas tester les subsets deja elagués
+    def subset_key(subset):
+        return frozenset(id(j) for j in subset)
+    def contains_pruned_subset(key):
+        return any(pruned_key.issubset(key) for pruned_key in pruned_subsets)
 
     while queue:
         current_subset = queue.pop(0)  # ← garder seulement celui-ci
+        current_key = subset_key(current_subset)
 
-        # Déduplication
-        key = frozenset(id(j) for j in current_subset)
-        if key in visited:
+        # 1. Si ce subset contient un subset déjà élagué, on ne l'évalue pas
+        if contains_pruned_subset(current_key):
+            print(
+                f"     ⏭️ Skip {[f'J{new_jobs.index(j)+1}' for j in current_subset]} "
+                f"car contient un subset déjà élagué"
+            )
             continue
-        visited.add(key)
+
+        if current_key in visited:
+            continue
+        visited.add(current_key)
 
         print(f"\n  → Subset={[f'J{new_jobs.index(j)+1}(dd={j.due_date})' for j in current_subset]} | size={len(current_subset)}")
 
@@ -165,6 +180,7 @@ def bfs_forward(state: State, new_jobs: list[Job], cut_time: int, agent: Agent, 
         # Sinon → élaguer
         else:
             print(f"     ❌ Élagué (tardiness={cost_existants} > δ_max={cost_max:.1f})")
+            pruned_subsets.add(current_key)
     return best_subset
 
 def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str, delta_ratio: float = 0.2) -> State:
@@ -192,7 +208,7 @@ def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str,
         new_jobs  = order.jobs
 
         # Gantt avant le cut
-        gnn_gantt(f"data/gantts/before_cut_{order.id}.png", env.state, f"before cut {order.id}", cut_times=[cut_time])
+        #gnn_gantt(f"data/gantts/before_cut_{order.id}.png", env.state, f"before cut {order.id}", cut_times=[cut_time])
 
 
         print(f"\n=== Order {order.id} | cut_time={cut_time} | {len(new_jobs)} nouveaux jobs ===")
@@ -214,7 +230,7 @@ def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str,
         cut_state = build_state_from_cut(env.state, cut_time)
         #cut_state.display_calendars()
         #cut_state.all_stations.stations[1].calendar.display_calendar("STATION 2")
-        gnn_gantt(f"data/gantts/after_cut_{order.id}.png", env.state, f"after cut {order.id}", cut_times=[cut_time])
+        #gnn_gantt(f"data/gantts/after_cut_{order.id}.png", env.state, f"after cut {order.id}", cut_times=[cut_time])
         #cut_state.robot.calendar.display_calendar("ROBOT après cut 3")
         #cut_state.get_job_by_id(3).calendar.display_calendar("JOB 4 après cut 3")
         #ut_state.all_stations.stations[2].calendar.display_calendar("STATION 3 après cut 3")
