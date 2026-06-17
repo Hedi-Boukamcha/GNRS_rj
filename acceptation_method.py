@@ -1,3 +1,5 @@
+import random
+
 from gantt_builder.gnn_gantt import gnn_gantt
 from models.order import OrderInstance
 from models.state import State, JobState
@@ -7,6 +9,7 @@ from simulators.gnn_simulator import build_state_from_cut
 from models.environment import Environment
 from gnn_solver import search_possible_decisions, take_one_step
 from conf import *
+import time
 
 
 # ############################################
@@ -19,26 +22,36 @@ __license__ = "MIT"
 
 
 # Definition de la valeur du retard actuel (de reference)
-def compute_tardiness_ref(state: State, cut_time: int, agent: Agent, device: str) -> int:
+def compute_tardiness_ref(state: State, cut_time: int, agent: Agent, device: str, all_weights: dict) -> tuple[float, int]:
     """
     Reschedule le pool existant seul sans nouveaux jobs.
-    Retourne le total_delay de référence.
+    Retourne le coût pondéré de référence des jobs existants et le Cmax.
     """
-    # 1. Reconstruire l'état au cut_time
+
     cut_state = build_state_from_cut(state, cut_time)
-    
-    # 2. GNN reschedule sans nouveaux jobs
+
     graph = cut_state.to_hyper_graph(last_job_in_pos=-1, current_time=cut_time, device=device)
-    env   = Environment(graph=graph, state=cut_state, n=len(cut_state.job_states), action_time=cut_time)
+
+    env = Environment(graph=graph, state=cut_state, n=len(cut_state.job_states), action_time=cut_time)
+
     env.possible_decisions, env.decisionsT = search_possible_decisions(env=env, device=device)
-    
+
     while env.possible_decisions:
         action_id = agent.select_next_decision(graph=env.graph, decisionsT=env.decisionsT, greedy=True)
         env = take_one_step(agent=agent, last_env=env, action_id=action_id, device=device)
-    
-    # 3. Calculer le total_delay des jobs existants
-    # tardiness_ref = sum(j.delay for j in state.job_states)
-    cost_ref = compute_weighted_tardiness(state.job_states)
+
+    cost_ref = sum(
+        all_weights[id(j.job)] * j.delay
+        for j in env.state.job_states
+    )
+
+    #cmax_ref = env.state.cmax
+
+    print("\n  === Référence existants seuls ===")
+    print(f"  tardiness ref existants : {[j.delay for j in env.state.job_states]}")
+    print(f"  weights ref existants   : {[round(all_weights[id(j.job)], 4) for j in env.state.job_states]}")
+    print(f"  cost_ref                : {cost_ref:.4f}")
+    print(f"  cmax_ref                : {state.cmax}")
 
     return cost_ref, state.cmax
 
@@ -56,132 +69,220 @@ def compute_weighted_tardiness(job_states: list[JobState]) -> float:
     )
 
 # Evaluation des nouveaux jobs (sous ensembles): qq soit un seul job ou bien une combinaison de plusieurs jobs
-def evaluate_subset(state: State, subset: list[Job], new_jobs: list[Job], cut_time: int, nb_existing: int, agent: Agent, device: str) -> tuple[int, int]:
+def evaluate_subset(state: State, subset: list[Job], new_jobs: list[Job], cut_time: int, nb_existing: int, agent: Agent, device: str, all_weights: dict) -> tuple[float, float, float, int]:
     """
     Reschedule le pool existant + le sous-ensemble S.
-    Retourne (total_delay_existants, cmax).
+    Retourne cost_existants, cost_nouveaux, total_cost, cmax.
     """
-    # 1. Reconstruire l'état au cut_time
+
     cut_state = build_state_from_cut(state, cut_time)
-    
-    # 2. Ajouter seulement les jobs du sous-ensemble
+
     cut_state.add_jobs_to_state(subset)
-    
-    # 3. GNN reschedule
+
     graph = cut_state.to_hyper_graph(last_job_in_pos=-1, current_time=cut_time, device=device)
-    env   = Environment(graph=graph, state=cut_state, n=len(cut_state.job_states), action_time=cut_time)
+
+    env = Environment(graph=graph, state=cut_state, n=len(cut_state.job_states), action_time=cut_time)
+
     env.possible_decisions, env.decisionsT = search_possible_decisions(env=env, device=device)
-    
+
     while env.possible_decisions:
         action_id = agent.select_next_decision(graph=env.graph, decisionsT=env.decisionsT, greedy=True)
         env = take_one_step(agent=agent, last_env=env, action_id=action_id, device=device)
-    
-    """# 4. Calculer le total_tardiness des jobs EXISTANTS seulement (pas les nouveaux)
-    nb_existing = len(state.job_states)
-    #tardiness_existants = sum(j.delay for j in env.state.job_states[:nb_existing])
-    cost_existants = compute_weighted_tardiness(env.state.job_states[:nb_existing])
-    print(f"    tardiness existants: {[j.delay for j in env.state.job_states[:nb_existing]]}")
-    print(f"    tardiness nouveaux: {[j.delay for j in env.state.job_states[nb_existing:]]}")"""
-    # 4. Calculer le coût pondéré des jobs EXISTANTS seulement
-    nb_existing = len(state.job_states)
 
     existing_jobs = env.state.job_states[:nb_existing]
     new_jobs_states = env.state.job_states[nb_existing:]
 
-    cost_existants = compute_weighted_tardiness(existing_jobs)
+    cost_existants = sum(
+        all_weights[id(j.job)] * j.delay
+        for j in existing_jobs
+    )
+
+    cost_nouveaux = sum(
+        all_weights[id(j.job)] * j.delay
+        for j in new_jobs_states
+    )
+
+    total_cost = cost_existants + cost_nouveaux
 
     print(f"    tardiness existants: {[j.delay for j in existing_jobs]}")
-    print(f"    weights existants: {[round(compute_urgency_weight(j), 4) for j in existing_jobs]}")
-    print(f"    weighted tardiness existants: {[round(compute_urgency_weight(j) * j.delay, 4) for j in existing_jobs]}")
+    print(f"    weights existants: {[round(all_weights[id(j.job)], 4) for j in existing_jobs]}")
+    print(f"    weighted tardiness existants: {[round(all_weights[id(j.job)] * j.delay, 4) for j in existing_jobs]}")
     print(f"    cost_existants={cost_existants:.4f}")
 
     print(f"    tardiness nouveaux: {[j.delay for j in new_jobs_states]}")
+    print(f"    weights nouveaux: {[round(all_weights[id(j.job)], 4) for j in new_jobs_states]}")
+    print(f"    weighted tardiness nouveaux: {[round(all_weights[id(j.job)] * j.delay, 4) for j in new_jobs_states]}")
+    print(f"    cost_nouveaux={cost_nouveaux:.4f}")
 
-    # 5. Gantt pour ce subset
-    subset_label = "_".join([f"J{new_jobs.index(j)+1}" for j in subset]) if subset else "empty"
-    """gnn_gantt(
-        f"data/gantts/subset_{subset_label}_cut{cut_time}.png",
-        env.state,
-        f"subset={[f'J{new_jobs.index(j)+1}' for j in subset]} cut={cut_time}",
-        cut_times=[cut_time]
-    )"""
-    
-    return cost_existants, env.state.cmax
-
+    return cost_existants, cost_nouveaux, total_cost, env.state.cmax
 
 # Recherche en largeur des nouveaux jobs dans l'arbre
-def bfs_forward(state: State, new_jobs: list[Job], cut_time: int, agent: Agent, device: str, delta_ratio: float = 0.2) -> list[Job]:
+def bfs_forward(state: State, new_jobs: list[Job], cut_time: int, agent: Agent, device: str, all_weights: dict, delta_ratio: float = 0.2) -> list[Job]:
     """
     BFS Forward : explore les sous-ensembles de new_jobs à accepter.
-    Retourne le sous-ensemble avec le max de jobs qui respecte le retard de ref.
     """
-    nb_existing      = len(state.job_states)
+
+    nb_existing = len(state.job_states)
+
+    start_time = time.perf_counter()
+
+    n_evaluated = 0
+    n_valid = 0
+    n_pruned = 0
+    n_skipped = 0
+
     
-    # 1. Calculer δ_ref et δ_max
-    #tardiness_ref, cmax_ref = compute_tardiness_ref(state, cut_time, agent, device)
-    cost_ref, cmax_ref = compute_tardiness_ref(state, cut_time, agent, device)
-    cost_max = cost_ref * (1 + delta_ratio)
-    # Si δ_ref=0, utiliser un seuil absolu basé sur le Cmax
+
+    print("\n  === Weights utilisés ===")
+
+    print("  Jobs existants:")
+    for j in state.job_states:
+        print(
+            f"    J{j.id + 1} | "
+            f"dd={j.job.due_date} | "
+            f"weight={all_weights[id(j.job)]:.4f}"
+        )
+
+    print("  Nouveaux jobs:")
+    for i, job in enumerate(new_jobs):
+        print(
+            f"    New J{i + 1} | "
+            f"dd={job.due_date} | "
+            f"weight={all_weights[id(job)]:.4f}"
+        )
+
+    cost_ref, cmax_ref = compute_tardiness_ref(
+        state,
+        cut_time,
+        agent,
+        device,
+        all_weights
+    )
+
     if cost_ref == 0:
-        cost_max = cmax_ref * delta_ratio  # ex: 20% du Cmax comme tolérance
+        cost_max = cmax_ref * delta_ratio
     else:
         cost_max = cost_ref * (1 + delta_ratio)
-    print(f"  δ_ref={cost_ref} | δ_max={cost_max:.1f}")
 
-    # 2. BFS : file de sous-ensembles à explorer
-    best_subset  = []          # meilleur sous-ensemble trouvé
-    best_cmax   = float('inf')
-    visited      = set()       # sous-ensembles déjà évalués (déduplication)
-    queue        = [[job] for job in new_jobs]        # on commence par le premier job de la commande
+    print(f"\n  cost_ref={cost_ref:.4f} | cost_max={cost_max:.4f}")
+
+    best_subset = []
+    best_cmax = float("inf")
+    best_cost = float("inf")
+
+    visited = set()
     pruned_subsets = set()
 
-    # ne pas tester les subsets deja elagués
+    queue = [[job] for job in new_jobs]
+
     def subset_key(subset):
         return frozenset(id(j) for j in subset)
+
     def contains_pruned_subset(key):
         return any(pruned_key.issubset(key) for pruned_key in pruned_subsets)
 
     while queue:
-        current_subset = queue.pop(0)  # ← garder seulement celui-ci
+        current_subset = queue.pop(0)
         current_key = subset_key(current_subset)
-
-        # 1. Si ce subset contient un subset déjà élagué, on ne l'évalue pas
-        if contains_pruned_subset(current_key):
-            print(
-                f"     ⏭️ Skip {[f'J{new_jobs.index(j)+1}' for j in current_subset]} "
-                f"car contient un subset déjà élagué"
-            )
-            continue
 
         if current_key in visited:
             continue
+
+        if contains_pruned_subset(current_key):
+            print(
+                f"⏭️ Skip {[f'J{new_jobs.index(j)+1}' for j in current_subset]} "
+                f"car contient un subset déjà élagué"
+            )
+            n_skipped += 1
+            visited.add(current_key)
+            continue
+
         visited.add(current_key)
 
-        print(f"\n  → Subset={[f'J{new_jobs.index(j)+1}(dd={j.due_date})' for j in current_subset]} | size={len(current_subset)}")
+        print(
+            f"\n  → Subset="
+            f"{[f'J{new_jobs.index(j)+1}(dd={j.due_date})' for j in current_subset]} "
+            f"| size={len(current_subset)}"
+        )
 
-        # Évaluer le sous-ensemble courant
-        # tardiness_existants, cmax = evaluate_subset(state, current_subset, new_jobs, cut_time, nb_existing, agent, device)
-        cost_existants, cmax = evaluate_subset(state, current_subset, new_jobs, cut_time, nb_existing, agent, device)
-        print(f"     cost_existants={cost_existants} | δ_max={cost_max:.1f} | cmax={cmax}")
+        n_evaluated += 1
 
+        cost_existants, cost_nouveaux, total_cost, cmax = evaluate_subset(
+            state,
+            current_subset,
+            new_jobs,
+            cut_time,
+            nb_existing,
+            agent,
+            device,
+            all_weights
+        )
+
+        print(
+            f"cost_existants={cost_existants:.4f} | "
+            f"cost_nouveaux={cost_nouveaux:.4f} | "
+            f"total_cost={total_cost:.4f} | "
+            f"cost_max={cost_max:.4f} | "
+            f"cmax={cmax}"
+        )
 
         if cost_existants <= cost_max:
-            print(f"     ✅ Valide → extension")
+            n_valid += 1
+            print("     ✅ Valide → extension")
+
             if len(current_subset) > len(best_subset):
                 best_subset = current_subset
-                best_cmax   = cmax
-            elif len(current_subset) == len(best_subset) and cmax < best_cmax:
-                best_subset = current_subset
-                best_cmax   = cmax
-            # Ajouter les extensions
+                best_cmax = cmax
+                best_cost = total_cost
+
+            elif len(current_subset) == len(best_subset):
+                if total_cost < best_cost:
+                    best_subset = current_subset
+                    best_cmax = cmax
+                    best_cost = total_cost
+
+                elif total_cost == best_cost and cmax < best_cmax:
+                    best_subset = current_subset
+                    best_cmax = cmax
+                    best_cost = total_cost
+
             for job in new_jobs:
                 if job not in current_subset:
-                    queue.append(current_subset + [job])
-        # Sinon → élaguer
+                    new_subset = current_subset + [job]
+                    new_key = subset_key(new_subset)
+
+                    if new_key not in visited:
+                        queue.append(new_subset)
+
         else:
-            print(f"     ❌ Élagué (tardiness={cost_existants} > δ_max={cost_max:.1f})")
+            n_pruned += 1
+            print(
+                f"     ❌ Élagué "
+                f"(cost_existants={cost_existants:.4f} > cost_max={cost_max:.4f})"
+            )
             pruned_subsets.add(current_key)
+
+    end_time = time.perf_counter()
+    acceptance_time = end_time - start_time
+
+    print("\n  === Statistiques méthode d'acceptation ===")
+    #print(f"  Temps computationnel : {acceptance_time:.4f} secondes")
+    print(f"  Subsets évalués     : {n_evaluated}")
+    print(f"  Subsets valides     : {n_valid}")
+    print(f"  Subsets élagués     : {n_pruned}")
+    print(f"  Subsets skippés     : {n_skipped}")
+
+    print("\n  === Résultat BFS ===")
+    print(
+        f"  Best subset : "
+        f"{[f'J{new_jobs.index(j)+1}(dd={j.due_date})' for j in best_subset]}"
+    )
+    print(f"  Best size   : {len(best_subset)}")
+    print(f"  Best cost   : {best_cost:.4f}")
+    print(f"  Best cmax   : {best_cmax}")
+
     return best_subset
+
 
 def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str, delta_ratio: float = 0.2) -> State:
     """
@@ -195,17 +296,28 @@ def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str,
     graph       = state.to_hyper_graph(last_job_in_pos=-1, current_time=0, device=device)
     env         = Environment(graph=graph, state=state, n=len(instance.jobs))
     env.possible_decisions, env.decisionsT = search_possible_decisions(env=env, device=device)
+    all_weights = {}
+
+    # Temps total de toute la méthode d'acceptation
+    global_start_time = time.perf_counter()
 
     while env.possible_decisions:
         action_id = agent.select_next_decision(graph=env.graph, decisionsT=env.decisionsT, greedy=True)
         env = take_one_step(agent=agent, last_env=env, action_id=action_id, device=device)
 
     print(f"Order 1 schedulé | Cmax={env.state.cmax} | Tardiness={sum(j.delay for j in env.state.job_states)}")
+    first_order = order_instance.orders[0]
+    for job in first_order.jobs:
+        all_weights[id(job)] = random.uniform(EXISTING_COST_MIN, EXISTING_COST_MAX)
 
     # 2. Pour chaque order suivant → Master Problem
     for order in order_instance.orders[1:]:
         cut_time  = order.cut_time
         new_jobs  = order.jobs
+
+        for job in new_jobs:
+            if id(job) not in all_weights:
+                all_weights[id(job)] = random.uniform(NEW_COST_MIN, NEW_COST_MAX)
 
         # Gantt avant le cut
         #gnn_gantt(f"data/gantts/before_cut_{order.id}.png", env.state, f"before cut {order.id}", cut_times=[cut_time])
@@ -214,7 +326,7 @@ def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str,
         print(f"\n=== Order {order.id} | cut_time={cut_time} | {len(new_jobs)} nouveaux jobs ===")
 
         # 3. Master Problem → choisir le meilleur sous-ensemble
-        best_subset = bfs_forward(env.state, new_jobs, cut_time, agent, device, delta_ratio)
+        best_subset = bfs_forward(env.state, new_jobs, cut_time, agent, device, all_weights, delta_ratio)
         
         print(f"\n  === Résultat Order {order.id} ===")
         print(f"  Jobs acceptés  : {[f'J{new_jobs.index(j)+1}(dd={j.due_date})' for j in best_subset]}")
@@ -279,5 +391,12 @@ def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str,
 
 
         print(f"Order {order.id} schedulé | Cmax={env.state.cmax} | Tardiness={sum(j.delay for j in env.state.job_states)}")
+    global_end_time = time.perf_counter()
+    total_acceptance_time = global_end_time - global_start_time
+
+    print("\n=== Statistiques globales méthode d'acceptation ===")
+    print(f"  Temps computationnel total : {total_acceptance_time:.4f} secondes")
+    print(f"  Nombre d'orders            : {len(order_instance.orders)}")
+    print(f"  Nombre total de jobs       : {order_instance.nb_jobs}")
 
     return env.state

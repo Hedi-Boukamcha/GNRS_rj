@@ -116,3 +116,9 @@ ORDERS_SIZES: list = [
     ("l",  4, 6,  3),
     ("xl", 6, 10, 4),
 ]
+
+EXISTING_COST_MIN = 4.5
+EXISTING_COST_MAX = 5.5
+
+NEW_COST_MIN = 0.2
+NEW_COST_MAX = 1.8

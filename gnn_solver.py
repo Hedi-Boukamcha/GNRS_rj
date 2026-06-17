@@ -302,8 +302,8 @@ if __name__ == "__main__":
     custom: bool       = to_bool(args.custom)
 
     interactive: bool  = to_bool(args.interactive)
-    # device: str      = torch.device("mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu")
-    device: str        = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device: str      = torch.device("mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu")
+    # device: str        = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Current computing device is: {device}...")
     ray.init(num_cpus=8, ignore_reinit_error=True)
     agent: Agent       = Agent(device=device, interactive=interactive, load=load_weights, path=base_path+'/data/training/', train=(args.mode == "train"), custom=custom)
