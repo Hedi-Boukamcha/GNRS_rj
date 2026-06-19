@@ -15,6 +15,12 @@ __email__   = "hedi.boukamcha.1@ulaval.ca; anas.neumann@polymtl.ca"
 __version__ = "2.0.0"
 __license__ = "MIT"
 
+
+#########################################
+# total delay = total weighted tardiness
+#########################################
+
+
 # Events and Decision data ---------------------------------------------------------------------------------------
 Position = Union['Machine', 'Machine1', 'Machine2', 'Stations']
  
@@ -150,21 +156,25 @@ class State:
         self.ub_cmax     = max(current_time, 1)
         self.ub_delay    = 1
         for js in self.job_states:  
+            w = int(getattr(js.job, "cost", 1))
             if js.is_done(): 
                 js.delay          = max(0, js.end - js.job.due_date) 
-                self.total_delay += js.delay
-                self.ub_delay    += js.delay
+                self.total_delay += w * js.delay
+                self.ub_delay    += w * js.delay
             else:
                 endJ: int = current_time + L
                 for o in js.operation_states:
                     if o.remaining_time > 0:
                         endJ += 2*M + o.operation.processing_time 
-                self.total_delay += max(0, endJ - js.job.due_date) 
+                
+                estimated_delay = max(0, endJ - js.job.due_date)
+                self.total_delay += w * estimated_delay
 
         # 2. Maximal remaining delays and production time (makespan)
         sorted_jobs: list[JobState] = sorted(self.job_states, key=lambda j: j.job.due_date)
         for js in reversed(sorted_jobs):
             if not js.is_done():
+                w = int(getattr(js.job, "cost", 1))
                 has_one_done: bool = False
                 for o in js.operation_states:
                     if o.remaining_time > 0:
@@ -174,7 +184,9 @@ class State:
                     else:
                         has_one_done = True
                 self.ub_cmax += L * (1 if has_one_done else 2)
-                self.ub_delay += max(0, self.ub_cmax - js.job.due_date)
+
+            estimated_ub_delay = max(0, self.ub_cmax - js.job.due_date)
+            self.ub_delay += w * estimated_ub_delay
         self.ub_cmax = max(self.cmax, self.ub_cmax)
 
     def display_calendars(self):
@@ -327,6 +339,177 @@ class State:
                         self.check_location(j.location, POS_STATION), # 11. Is the job on the stations?
                         is_pos,                                       # 12. Is the job on the positionner?
                         float(j.job.release_date)])                   # 13. Release date
+        graph["job"].x = torch.tensor(job_features, dtype=torch.float)
+
+        # II. create station features
+        station_features: list = []
+        self.all_stations.stations.sort(key=lambda s: s.id)
+        for s in self.all_stations.stations:
+               time_before_free: float = max(0.0, s.free_at - current_time)
+               station_features.append([float(s.accept_big),         # 0. Can this station machine big jobs?
+                                        time_before_free])           # 1. Estimated (or real) remaining time before free
+        graph["station"].x = torch.tensor(station_features, dtype=torch.float)
+        
+        # III. create links between stations and jobs
+        scj_src: list = []
+        scj_dest: list = []
+        slj_src: list = []
+        slj_dest: list = []
+        for s in self.all_stations.stations:
+            jobs = poss_jobs_s1 if s.id == STATION_1 else poss_jobs_s2 if s.id == STATION_2 else poss_jobs_s3
+            loaded_job = job_station_1 if s.id == STATION_1 else job_station_2 if s.id == STATION_2 else job_station_3
+            for j in jobs:
+                scj_src.append(s.id)
+                scj_dest.append(j)  
+            if loaded_job >= 0: 
+                slj_src.append(s.id)
+                slj_dest.append(loaded_job)  
+        graph["station", "can_load", "job"].edge_index = torch.tensor([scj_src, scj_dest], dtype=torch.long)
+        graph["job", "could_be_loaded", "station"].edge_index = graph["station", "can_load", "job"].edge_index.flip(0)
+        if slj_src:
+            graph["station", "loaded", "job"].edge_index = torch.tensor([slj_src, slj_dest], dtype=torch.long)
+            graph["job", "loaded_in", "station"].edge_index = graph["station", "loaded", "job"].edge_index.flip(0)
+
+        # IV. create machine features
+        machine_features: list = []
+        time_before_free_m1: float = max(0.0, self.machine1.free_at - current_time)
+        machine_features.append([nb_first_op_m1,                    # 0. remaining numbers of first operations
+                                 nb_last_op_m1,                     # 1. remaining numbers of last operations
+                                 time_before_free_m1])              # 2. Estimated (or real) remaining time before free
+        time_before_free_m2: float = max(0.0, self.machine2.free_at - current_time)
+        machine_features.append([nb_first_op_m2,                    # 0. remaining numbers of first operations
+                                 nb_last_op_m2,                     # 1. remaining numbers of last operations
+                                 time_before_free_m2])              # 2. Estimated (or real) remaining time before free
+        graph["machine"].x = torch.tensor(machine_features, dtype=torch.float)
+
+        # V. create edges between jobs and machines
+        mnj_src: list = []
+        mnj_dest: list = []
+        for j in poss_jobs_m1:
+            mnj_src.append(MACHINE_1)
+            mnj_dest.append(j)
+        for j in poss_jobs_m2:
+            mnj_src.append(MACHINE_2)
+            mnj_dest.append(j)
+        graph["machine", "will_execute", "job"].edge_index = torch.tensor([mnj_src, mnj_dest], dtype=torch.long)
+        graph["job", "needs", "machine"].edge_index        = graph["machine", "will_execute", "job"].edge_index.flip(0)
+        mej_src: list = []
+        mej_dest: list = []
+        if job_machine_1 >= 0:
+            mej_src.append(MACHINE_1)
+            mej_dest.append(job_machine_1)
+        if job_machine_2 >= 0:
+            mej_src.append(MACHINE_2)
+            mej_dest.append(job_machine_2)
+        if mej_src:
+            graph["machine", "execute", "job"].edge_index     = torch.tensor([mej_src, mej_dest], dtype=torch.long)
+            graph["job", "executed_by", "machine"].edge_index = graph["machine", "execute", "job"].edge_index.flip(0)
+ 
+        # VI. create robot features
+        robot_features: list = []
+        time_before_free: float = max(0.0, self.robot.free_at - current_time)
+        robot_features.append([self.check_location(self.robot.location, POS_STATION),   # 0. Is the robot on the stations?
+                               self.check_location(self.robot.location, POS_MACHINE_1), # 1. Is the robot on machine 1
+                               self.check_location(self.robot.location, POS_MACHINE_2), # 2. Is the robot on machine 2
+                               time_before_free])                                       # 3. Estimated (or real) remaining time before free
+        graph["robot"].x = torch.tensor(robot_features, dtype=torch.float)
+
+        # VII. create the links between the robot and the job it holds
+        if job_robot >= 0:
+            graph["robot", "hold", "job"].edge_index = torch.tensor([[0], [job_robot]], dtype=torch.long)
+            graph["job", "hold_by", "robot"].edge_index = graph["robot", "hold", "job"].edge_index.flip(0)
+        return graph.to(device)
+    
+    # hyper graph with costs for the new version of instances
+    def to_hyper_graph_costs(self, last_job_in_pos: int, current_time: int, device: str) -> HeteroData:
+        graph = HeteroData()
+        job_machine_1: int  = -1
+        job_machine_2: int  = -1
+        job_robot:     int  = -1
+        nb_first_op_m1: int = 0
+        nb_last_op_m1: int  = 0
+        nb_first_op_m2: int = 0
+        nb_last_op_m2: int  = 0
+        job_station_1: int  = -1
+        job_station_2: int  = -1
+        job_station_3: int  = -1
+        poss_jobs_s1: list  = []
+        poss_jobs_s2: list  = []
+        poss_jobs_s3: list  = []
+        poss_jobs_m1: list  = []
+        poss_jobs_m2: list  = []
+
+        # 1. Create job features
+        job_features: list = []
+        graph_id: int = 0
+        for j in self.job_states:
+            if not j.is_done() or j.id == last_job_in_pos:
+                j.graph_id = int(graph_id)
+                graph_id += 1
+                poss_jobs_s2.append(j.graph_id)
+                if not j.job.big:
+                    poss_jobs_s1.append(j.graph_id)
+                    poss_jobs_s3.append(j.graph_id)
+                cs1, cs2, cs3 = 0.0, 0.0, 0.0
+                if (j.current_station is not None) and (j.current_station.id == STATION_1):
+                    cs1 = 1.0
+                    job_station_1 = j.graph_id
+                elif (j.current_station is not None) and  j.current_station.id == STATION_2:
+                    cs2 = 1.0
+                    job_station_2 = j.graph_id
+                elif (j.current_station is not None) and  j.current_station.id == STATION_3:
+                    cs3 = 1.0
+                    job_station_3 = j.graph_id
+                m1, m2 = 0.0, 0.0
+                if self.check_location(j.location, POS_MACHINE_1):
+                    m1 = 1.0
+                    job_machine_1 = j.graph_id
+                    if j.id != last_job_in_pos:
+                        job_robot = j.graph_id
+                elif self.check_location(j.location, POS_MACHINE_2):
+                    m2 = 1.0
+                    job_machine_2 = j.graph_id
+                    job_robot = j.graph_id
+                machine_1_is_first: float = float(j.operation_states[0].operation.type == MACHINE_1)
+                is_pos: float             = float(j.id == last_job_in_pos)
+                remaining_time_dd: int    = float(current_time - j.job.due_date)
+                remaining_time_m1: float  = 0.0
+                remaining_time_m2: float  = 0.0
+                for idx, o in enumerate(j.operation_states):
+                    if o.operation.type == MACHINE_1:
+                        if o.remaining_time > 0:
+                            poss_jobs_m1.append(j.graph_id)
+                        remaining_time_m1 = o.remaining_time
+                        if idx == 0:
+                            nb_first_op_m1 += 1
+                        if idx == len(j.operation_states) -1:
+                            nb_last_op_m1  += 1
+                    else:
+                        if o.remaining_time > 0:
+                            poss_jobs_m2.append(j.graph_id)
+                        remaining_time_m2 = o.remaining_time
+                        if idx == 0:
+                            nb_first_op_m2 += 1
+                        if idx == len(j.operation_states) -1:
+                            nb_last_op_m2  += 1
+
+                cost = float(getattr(j.job, "tardiness_cost", 1))
+                job_features.append([
+                        float(j.job.big),                             # 0. Is it a big job that can only use station 2?
+                        remaining_time_m1,                            # 1. remaining time in machine 1
+                        remaining_time_m2,                            # 2. remaining time in machine 2
+                        machine_1_is_first,                           # 3. machine 1 before machine 2?
+                        float(j.job.pos_time),                        # 4. Time to place the job on the poisitioner
+                        remaining_time_dd,                            # 5. Remaining time before due date (or current delay)
+                        cs1,                                          # 6. Is it loaded in station 1?
+                        cs2,                                          # 7. Is it loaded in station 2?
+                        cs3,                                          # 8. Is it loaded in station 3?
+                        m1,                                           # 9. Hold by robot at machine 1?
+                        m2,                                           # 10. Hold by robot at machine 2?
+                        self.check_location(j.location, POS_STATION), # 11. Is the job on the stations?
+                        is_pos,                                       # 12. Is the job on the positionner?
+                        float(j.job.release_date),                    # 13. Release date
+                        cost])                                    # 14. Tardiness weight / cost
         graph["job"].x = torch.tensor(job_features, dtype=torch.float)
 
         # II. create station features
