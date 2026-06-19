@@ -161,7 +161,7 @@ def get_loading_time_and_force_unloading_previous(state: State, j: JobState, sta
         )
         return prev_unload_time
 
-def test_loading_time(state: State, station: StationState) -> int: 
+"""def test_loading_time(state: State, station: StationState) -> int: 
     if station.current_job == None: # Case 1: station is free
         return max(0, station.free_at)
     else: # Case 2: station is not free => what time to unload its job?
@@ -171,11 +171,37 @@ def test_loading_time(state: State, station: StationState) -> int:
         if current_job.location.position_type == POS_MACHINE_1 or current_job.location.position_type == POS_MACHINE_2:
             time +=2* state.M if state.robot.location != current_job.location else state.M
         time += state.L
-        return time
+        return time"""
+
+def test_loading_time(state: State, station: StationState) -> int:
+    if station.current_job is None:
+        return max(0, station.free_at)
+
+    current_job: JobState = station.current_job
+
+    # Sécurité : la station pointe vers un job déjà sorti du système
+    if current_job.location is None:
+        station.current_job = None
+        return max(0, station.free_at)
+
+    last_op: OperationState = current_job.get_last_executed_operation()
+
+    if last_op is None:
+        station.current_job = None
+        return max(0, station.free_at)
+
+    time: int = last_op.end
+
+    if current_job.location.position_type == POS_MACHINE_1 or current_job.location.position_type == POS_MACHINE_2:
+        time += 2 * state.M if state.robot.location != current_job.location else state.M
+
+    time += state.L
+
+    return time
 
 # (2/4) CANCEL THE UNLOADING OF LAST PARALLEL MODE B #######################################################
 
-def cancel_unloading_last_parallel_if_exist(state: State, needs_station_2: bool):
+"""def cancel_unloading_last_parallel_if_exist(state: State, needs_station_2: bool):
     if state.machine1.calendar.len() >= 2:
         previous_last_event: Event = state.machine1.calendar.get(-2)
         operation: OperationState = previous_last_event.operation
@@ -205,7 +231,97 @@ def cancel_unloading_last_parallel_if_exist(state: State, needs_station_2: bool)
             state.robot.current_job = None
             state.robot.free_at     = state.robot.calendar.get(-1).end
             return j, j.current_station
-    return None, None
+    return None, None"""
+
+def cancel_unloading_last_parallel_if_exist(state: State, needs_station_2: bool):
+    if state.machine1.calendar.len() < 2:
+        return None, None
+
+    previous_last_event: Event = state.machine1.calendar.get(-2)
+    operation: OperationState = previous_last_event.operation
+    j: JobState = previous_last_event.job
+
+    if previous_last_event.event_type != POS:
+        return None, None
+
+    if operation is None or not operation.is_last:
+        return None, None
+
+    if needs_station_2 and j.current_station is not None and j.current_station.id == STATION_2:
+        return None, None
+
+    # Sécurité : après un cut_time, les événements MOVE/UNLOAD peuvent ne plus être rollbackables
+    if j.current_station is None:
+        return None, None
+
+    if not j.calendar.has_events():
+        return None, None
+
+    if j.calendar.get_last_event().event_type != UNLOAD:
+        return None, None
+
+    # Sécurité importante : ne pas pop dans une station vide
+    if not j.current_station.calendar.has_events():
+        return None, None
+
+    if j.current_station.calendar.len() < 2:
+        return None, None
+
+    # Vérifier que les deux derniers événements de la station concernent bien ce job
+    last_station_event = j.current_station.calendar.get(-1)
+    prev_station_event = j.current_station.calendar.get(-2)
+
+    if last_station_event.job is None or last_station_event.job.id != j.id:
+        return None, None
+
+    if prev_station_event.job is None or prev_station_event.job.id != j.id:
+        return None, None
+
+    # Vérifier que le robot a assez d'événements pour rollback
+    if state.robot.calendar.len() < 1:
+        return None, None
+
+    # Rollback du job
+    if j.calendar.len() < 2:
+        return None, None
+
+    j.calendar.events.pop()
+    j.calendar.events.pop()
+
+    j.status = IN_SYSTEM
+    j.location = state.machine1
+    j.operation_states[-1].status = IN_EXECUTION
+
+    # Rollback de la station
+    j.current_station.calendar.events.pop()
+    j.current_station.calendar.events.pop()
+    j.current_station.current_job = j
+
+    # Rollback du robot
+    e: Event = state.robot.calendar.events.pop()
+
+    if state.robot.calendar.len() == 0:
+        state.robot.location = state.all_stations
+        state.robot.current_job = None
+        state.robot.free_at = 0
+        return j, j.current_station
+
+    prev: Event = state.robot.calendar.events[-1]
+
+    if prev.event_type == MOVE:
+        if state.robot.calendar.len() >= 1:
+            e = state.robot.calendar.events.pop()
+
+    if state.robot.calendar.len() > 0:
+        state.robot.free_at = state.robot.calendar.get(-1).end
+        state.robot.location = e.source if e.source is not None else state.all_stations
+    else:
+        state.robot.free_at = 0
+        state.robot.location = state.all_stations
+
+    state.robot.current_job = None
+
+    return j, j.current_station
 
 # (3/4) FREE THE TARGET MACHINE IF STILL BUSY ##############################################################
 
@@ -597,6 +713,37 @@ def _fix_robot_held_job(new_state: State, cut_time: int):
     else:
         new_state.robot.current_job = None
 
+def _sync_state_after_cut(new_state: State):
+    """
+    Nettoie les incohérences après build_state_from_cut.
+    Une station ne doit pas pointer vers un job terminé ou sans localisation.
+    """
+
+    if new_state.robot.location is None:
+        new_state.robot.location = new_state.all_stations
+
+    for station in new_state.all_stations.stations:
+        job = station.current_job
+
+        if job is None:
+            continue
+
+        if job.location is None:
+            station.current_job = None
+            continue
+
+        if job.is_done() or job.status == DONE:
+            station.current_job = None
+            continue
+
+        if job.location.position_type != POS_STATION:
+            station.current_job = None
+            continue
+
+        if job.current_station is None or job.current_station.id != station.id:
+            station.current_job = None
+            continue
+
 def _cut_machine(machine, cut_time: int):
     machine.calendar.events = [e for e in machine.calendar.events 
                                 if e.end <= cut_time or (e.start <= cut_time and e.end > cut_time)]
@@ -779,6 +926,7 @@ def build_state_from_cut(state: State, cut_time: int) -> State:
     
     _clean_robot_obsolete_events(new_state, cut_time)  # 1. nettoyer d'abord
     _fix_robot_held_job(new_state, cut_time)            # 2. ajouter les events post-HOLD après
+    _sync_state_after_cut(new_state)
     return new_state
 
 # END OF FILE! ##########################################################################################

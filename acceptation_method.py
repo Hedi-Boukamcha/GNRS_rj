@@ -22,38 +22,26 @@ __license__ = "MIT"
 
 
 # Definition de la valeur du retard actuel (de reference)
-def compute_tardiness_ref(state: State, cut_time: int, agent: Agent, device: str, all_weights: dict) -> tuple[float, int]:
+def compute_current_schedule_ref(state: State, all_weights: dict) -> tuple[float, int]:
     """
-    Reschedule le pool existant seul sans nouveaux jobs.
-    Retourne le coût pondéré de référence des jobs existants et le Cmax.
+    Calcule le coût de référence à partir de la cédule actuelle.
+    Aucun rescheduling n'est effectué.
     """
-
-    cut_state = build_state_from_cut(state, cut_time)
-
-    graph = cut_state.to_hyper_graph(last_job_in_pos=-1, current_time=cut_time, device=device)
-
-    env = Environment(graph=graph, state=cut_state, n=len(cut_state.job_states), action_time=cut_time)
-
-    env.possible_decisions, env.decisionsT = search_possible_decisions(env=env, device=device)
-
-    while env.possible_decisions:
-        action_id = agent.select_next_decision(graph=env.graph, decisionsT=env.decisionsT, greedy=True)
-        env = take_one_step(agent=agent, last_env=env, action_id=action_id, device=device)
 
     cost_ref = sum(
         all_weights[id(j.job)] * j.delay
-        for j in env.state.job_states
+        for j in state.job_states
     )
 
-    #cmax_ref = env.state.cmax
+    cmax_ref = state.cmax
 
-    print("\n  === Référence existants seuls ===")
-    print(f"  tardiness ref existants : {[j.delay for j in env.state.job_states]}")
-    print(f"  weights ref existants   : {[round(all_weights[id(j.job)], 4) for j in env.state.job_states]}")
+    print("\n  === Référence cédule actuelle ===")
+    print(f"  tardiness ref existants : {[j.delay for j in state.job_states]}")
+    print(f"  weights ref existants   : {[round(all_weights[id(j.job)], 4) for j in state.job_states]}")
     print(f"  cost_ref                : {cost_ref:.4f}")
-    print(f"  cmax_ref                : {state.cmax}")
+    print(f"  cmax_ref                : {cmax_ref}")
 
-    return cost_ref, state.cmax
+    return cost_ref, cmax_ref
 
 # calculer les cout
 def compute_urgency_weight(j: JobState) -> float:
@@ -139,7 +127,7 @@ def bfs_forward(state: State, new_jobs: list[Job], cut_time: int, agent: Agent, 
     for j in state.job_states:
         print(
             f"    J{j.id + 1} | "
-            f"dd={j.job.due_date} | "
+            #f"dd={j.job.due_date} | "
             f"weight={all_weights[id(j.job)]:.4f}"
         )
 
@@ -147,15 +135,12 @@ def bfs_forward(state: State, new_jobs: list[Job], cut_time: int, agent: Agent, 
     for i, job in enumerate(new_jobs):
         print(
             f"    New J{i + 1} | "
-            f"dd={job.due_date} | "
+            #f"dd={job.due_date} | "
             f"weight={all_weights[id(job)]:.4f}"
         )
 
-    cost_ref, cmax_ref = compute_tardiness_ref(
+    cost_ref, cmax_ref = compute_current_schedule_ref(
         state,
-        cut_time,
-        agent,
-        device,
         all_weights
     )
 
