@@ -7,8 +7,8 @@ from conf import INSTANCES_SIZES, M, L
 # ##########################
 # =*= INSTANCE GENERATOR =*=
 # ##########################
-__author__  = "Hedi Boukamcha; Anas Neumann"
-__email__   = "hedi.boukamcha.1@ulaval.ca; anas.neumann@polymtl.ca"
+__author__  = "Hedi Boukamcha"
+__email__   = "hedi.boukamcha.1@ulaval.ca"
 __version__ = "2.0.0"
 __license__ = "MIT"
 

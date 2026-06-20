@@ -7,7 +7,7 @@ from models.instance import Job
 from models.agent import Agent
 from simulators.gnn_simulator import build_state_from_cut
 from models.environment import Environment
-from gnn_solver import search_possible_decisions, take_one_step
+from gnn_solver_costs import search_possible_decisions, take_one_step
 from conf import *
 import time
 
@@ -64,15 +64,10 @@ def evaluate_subset(state: State, subset: list[Job], new_jobs: list[Job], cut_ti
     """
 
     cut_state = build_state_from_cut(state, cut_time)
-
     cut_state.add_jobs_to_state(subset)
-
-    graph = cut_state.to_hyper_graph(last_job_in_pos=-1, current_time=cut_time, device=device)
-
+    graph = cut_state.to_hyper_graph_costs(last_job_in_pos=-1, current_time=cut_time, device=device)
     env = Environment(graph=graph, state=cut_state, n=len(cut_state.job_states), action_time=cut_time)
-
     env.possible_decisions, env.decisionsT = search_possible_decisions(env=env, device=device)
-
     while env.possible_decisions:
         action_id = agent.select_next_decision(graph=env.graph, decisionsT=env.decisionsT, greedy=True)
         env = take_one_step(agent=agent, last_env=env, action_id=action_id, device=device)
@@ -118,8 +113,6 @@ def bfs_forward(state: State, new_jobs: list[Job], cut_time: int, agent: Agent, 
     n_valid = 0
     n_pruned = 0
     n_skipped = 0
-
-    
 
     print("\n  === Weights utilisés ===")
 
@@ -181,17 +174,13 @@ def bfs_forward(state: State, new_jobs: list[Job], cut_time: int, agent: Agent, 
             n_skipped += 1
             visited.add(current_key)
             continue
-
         visited.add(current_key)
-
         print(
             f"\n  → Subset="
             f"{[f'J{new_jobs.index(j)+1}(dd={j.due_date})' for j in current_subset]} "
             f"| size={len(current_subset)}"
         )
-
         n_evaluated += 1
-
         cost_existants, cost_nouveaux, total_cost, cmax = evaluate_subset(
             state,
             current_subset,
@@ -202,7 +191,6 @@ def bfs_forward(state: State, new_jobs: list[Job], cut_time: int, agent: Agent, 
             device,
             all_weights
         )
-
         print(
             f"cost_existants={cost_existants:.4f} | "
             f"cost_nouveaux={cost_nouveaux:.4f} | "
@@ -210,35 +198,28 @@ def bfs_forward(state: State, new_jobs: list[Job], cut_time: int, agent: Agent, 
             f"cost_max={cost_max:.4f} | "
             f"cmax={cmax}"
         )
-
         if cost_existants <= cost_max:
             n_valid += 1
             print("     ✅ Valide → extension")
-
             if len(current_subset) > len(best_subset):
                 best_subset = current_subset
                 best_cmax = cmax
                 best_cost = total_cost
-
             elif len(current_subset) == len(best_subset):
                 if total_cost < best_cost:
                     best_subset = current_subset
                     best_cmax = cmax
                     best_cost = total_cost
-
                 elif total_cost == best_cost and cmax < best_cmax:
                     best_subset = current_subset
                     best_cmax = cmax
                     best_cost = total_cost
-
             for job in new_jobs:
                 if job not in current_subset:
                     new_subset = current_subset + [job]
                     new_key = subset_key(new_subset)
-
                     if new_key not in visited:
                         queue.append(new_subset)
-
         else:
             n_pruned += 1
             print(
@@ -278,7 +259,7 @@ def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str,
     instance    = first_order.to_instance()
     state       = State(instance, M, L, NB_STATIONS, BIG_STATION, [], automatic_build=True)
     state.compute_obj_values_and_upper_bounds(unloading_time=0, current_time=0)
-    graph       = state.to_hyper_graph(last_job_in_pos=-1, current_time=0, device=device)
+    graph       = state.to_hyper_graph_costs(last_job_in_pos=-1, current_time=0, device=device)
     env         = Environment(graph=graph, state=state, n=len(instance.jobs))
     env.possible_decisions, env.decisionsT = search_possible_decisions(env=env, device=device)
     all_weights = {}
@@ -293,7 +274,8 @@ def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str,
     print(f"Order 1 schedulé | Cmax={env.state.cmax} | Tardiness={sum(j.delay for j in env.state.job_states)}")
     first_order = order_instance.orders[0]
     for job in first_order.jobs:
-        all_weights[id(job)] = random.uniform(EXISTING_COST_MIN, EXISTING_COST_MAX)
+        #all_weights[id(job)] = random.uniform(EXISTING_COST_MIN, EXISTING_COST_MAX)
+        all_weights[id(job)] = int(getattr(job, "cost", 1))
 
     # 2. Pour chaque order suivant → Master Problem
     for order in order_instance.orders[1:]:
@@ -302,10 +284,14 @@ def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str,
 
         for job in new_jobs:
             if id(job) not in all_weights:
-                all_weights[id(job)] = random.uniform(NEW_COST_MIN, NEW_COST_MAX)
+                #all_weights[id(job)] = random.uniform(NEW_COST_MIN, NEW_COST_MAX)
+                all_weights[id(job)] = int(getattr(job, "cost", 1))
 
         # Gantt avant le cut
-        #gnn_gantt(f"data/gantts/before_cut_{order.id}.png", env.state, f"before cut {order.id}", cut_times=[cut_time])
+        #gnn_gantt(f"data/gantts/test/same_costs/before_cut_{order.id}.png", env.state, f"before cut {order.id}", cut_times=[cut_time])
+        #gnn_gantt(f"data/gantts/test/different_costs/before_cut_{order.id}.png", env.state, f"before cut {order.id}", cut_times=[cut_time])
+        #gnn_gantt(f"data/gantts/test/E_high_N_low_ddLow/before_cut_{order.id}.png", env.state, f"before cut {order.id}", cut_times=[cut_time])
+        gnn_gantt(f"data/gantts/test/E_high_N_high_ddLow/before_cut_{order.id}.png", env.state, f"before cut {order.id}", cut_times=[cut_time])
 
 
         print(f"\n=== Order {order.id} | cut_time={cut_time} | {len(new_jobs)} nouveaux jobs ===")
@@ -360,7 +346,7 @@ def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str,
         #for j in cut_state.job_states:
             #print(f"Job {j.id+1} | status={j.status} | location={j.location} | ops={[(o.status, o.remaining_time) for o in j.operation_states]}")
         cut_state.add_jobs_to_state(best_subset)
-        graph     = cut_state.to_hyper_graph(last_job_in_pos=-1, current_time=cut_time, device=device)
+        graph     = cut_state.to_hyper_graph_costs(last_job_in_pos=-1, current_time=cut_time, device=device)
         env       = Environment(graph=graph, state=cut_state, n=len(cut_state.job_states), action_time=cut_time)
         env.possible_decisions, env.decisionsT = search_possible_decisions(env=env, device=device)
 
