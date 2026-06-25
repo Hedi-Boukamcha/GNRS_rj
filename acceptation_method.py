@@ -36,7 +36,7 @@ def compute_current_schedule_ref(state: State, all_weights: dict) -> tuple[float
     )
 
     cmax_ref = state.cmax
-    breakpoint()
+    #breakpoint()
     print("\n  === Référence cédule actuelle ===")
     print(f"  tardiness ref existants : {[j.delay for j in state.job_states]}")
     print(f"  weights ref existants   : {[round(all_weights[id(j.job)], 4) for j in state.job_states]}")
@@ -291,10 +291,10 @@ def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str,
         
         
         #gnn_gantt(f"data/gantts/test/same_costs/before_cut_{order.id}.png", env.state, f"before cut {order.id}", cut_times=[cut_time])
-        #gnn_gantt(f"data/gantts/test/different_costs/before_cut_{order.id}.png", env.state, f"before cut {order.id}", cut_times=[cut_time])
+        gnn_gantt(f"data/gantts/test/different_costs/before_cut_{order.id}.png", env.state, f"before cut {order.id}", cut_times=[cut_time])
         #gnn_gantt(f"data/gantts/test/different_near_costs/before_cut_{order.id}.png", env.state, f"before cut {order.id}", cut_times=[cut_time])
         #gnn_gantt(f"data/gantts/test/E_high_N_low_ddLow/before_cut_{order.id}.png", env.state, f"before cut {order.id}", cut_times=[cut_time])
-        gnn_gantt(f"data/gantts/test/E_high_N_high_ddLow/before_cut_{order.id}.png", env.state, f"before cut {order.id}", cut_times=[cut_time])
+        #gnn_gantt(f"data/gantts/test/E_high_N_high_ddLow/before_cut_{order.id}.png", env.state, f"before cut {order.id}", cut_times=[cut_time])
 
         print(f"\n=== Order {order.id} | cut_time={cut_time} | {len(new_jobs)} nouveaux jobs ===")
 

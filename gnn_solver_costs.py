@@ -296,14 +296,14 @@ if __name__ == "__main__":
     args               = parser.parse_args()
     base_path: str     = args.path
     instance_type: str = "debug/" if args.mode=="debug" else "train/" if args.mode == "train" else "test/"
-    path: str          = base_path + "/data/instances/" + instance_type
+    path: str          = base_path + "/data/instances_cost/" + instance_type
     gantt_path: str    = base_path + "/data/gantts/"
     load_weights: bool = to_bool(args.load)
     custom: bool       = to_bool(args.custom)
 
     interactive: bool  = to_bool(args.interactive)
-    device: str      = torch.device("mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu")
-    #device: str        = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    #device: str      = torch.device("mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu")
+    device: str        = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Current computing device is: {device}...")
     ray.init(num_cpus=8, ignore_reinit_error=True)
     agent: Agent       = Agent(device=device, interactive=interactive, load=load_weights, path=base_path+'/data/training_costs/', train=(args.mode == "train"), custom=custom)

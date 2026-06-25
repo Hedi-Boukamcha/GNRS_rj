@@ -493,7 +493,7 @@ class State:
                         if idx == len(j.operation_states) -1:
                             nb_last_op_m2  += 1
 
-                cost = float(getattr(j.job, "tardiness_cost", 1))
+                cost = float(getattr(j.job, "cost", 1))
                 job_features.append([
                         float(j.job.big),                             # 0. Is it a big job that can only use station 2?
                         remaining_time_m1,                            # 1. remaining time in machine 1
