@@ -128,3 +128,47 @@ EXISTING_COST_MAX = 1
 
 NEW_COST_MIN = 1
 NEW_COST_MAX = 1"""
+
+
+SCENARIOS = {
+    "different_costs": {
+        "existing_cost_range": (90, 100),
+        "new_cost_range": (1, 10),
+        "new_due_slack": (10, 80)
+    },
+
+    "same_costs": {
+        "existing_cost_range": (50, 50),
+        "new_cost_range": (50, 50),
+        "new_due_slack": (10, 80)
+    },
+
+    "E_90_100_N_40_50_dd_serre_N": {
+        "existing_cost_range": (90, 100),
+        "new_cost_range": (40, 50),
+        "new_due_slack": (1, 15)
+    },
+
+    "E_90_100_N_1_10_dd_serre_N": {
+        "existing_cost_range": (90, 100),
+        "new_cost_range": (1, 10),
+        "new_due_slack": (1, 15)
+    },
+
+    "same_costs_dd_serre_N": {
+        "existing_cost_range": (50, 50),
+        "new_cost_range": (50, 50),
+        "new_due_slack": (1, 15)
+    }
+}
+
+FAMILIES_CONFIG = {
+    "inst1": {
+        "nb_initial_jobs": 7,
+        "nb_new_jobs": 3
+    },
+    "inst2": {
+        "nb_initial_jobs": 18,
+        "nb_new_jobs": 7
+    }
+}
