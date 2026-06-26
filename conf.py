@@ -164,11 +164,11 @@ SCENARIOS = {
 
 FAMILIES_CONFIG = {
     "inst1": {
-        "nb_initial_jobs": 7,
-        "nb_new_jobs": 3
+        "nb_initial_jobs": 3,
+        "nb_new_jobs": 7
     },
     "inst2": {
-        "nb_initial_jobs": 18,
-        "nb_new_jobs": 7
+        "nb_initial_jobs": 5,
+        "nb_new_jobs": 15
     }
 }

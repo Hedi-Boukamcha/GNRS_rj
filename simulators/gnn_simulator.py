@@ -9,8 +9,182 @@ __email__   = "hedi.boukamcha.1@ulaval.ca; anas.neumann@polymtl.ca"
 __version__ = "2.0.0" 
 __license__ = "MIT"
 
+def validate_state_consistency(state: State, context: str = ""):
+    """
+    Vérifie les incohérences physiques du simulateur.
+    Ne corrige rien. Elle détecte seulement.
+    """
+
+    errors = []
+
+    # --------------------------------------------------
+    # 1. Vérification stations
+    # --------------------------------------------------
+    for station in state.all_stations.stations:
+        current_job = station.current_job
+
+        if current_job is not None:
+            if current_job.status == DONE:
+                errors.append(
+                    f"Station {station.id + 1} pointe vers J{current_job.id + 1}, "
+                    f"mais ce job est DONE."
+                )
+
+            if current_job.current_station is None:
+                errors.append(
+                    f"Station {station.id + 1} pointe vers J{current_job.id + 1}, "
+                    f"mais J{current_job.id + 1}.current_station=None."
+                )
+
+            elif current_job.current_station.id != station.id:
+                errors.append(
+                    f"Station {station.id + 1} pointe vers J{current_job.id + 1}, "
+                    f"mais J{current_job.id + 1}.current_station=S{current_job.current_station.id + 1}."
+                )
+
+    # --------------------------------------------------
+    # 2. Vérification jobs ↔ stations
+    # --------------------------------------------------
+    for job in state.job_states:
+        if job.current_station is not None:
+            station = job.current_station
+
+            if job.status != DONE and job.location is not None:
+                if station.current_job is None:
+                    errors.append(
+                        f"J{job.id + 1} a current_station=S{station.id + 1}, "
+                        f"mais S{station.id + 1}.current_job=None."
+                    )
+
+                elif station.current_job.id != job.id:
+                    errors.append(
+                        f"J{job.id + 1} a current_station=S{station.id + 1}, "
+                        f"mais S{station.id + 1}.current_job=J{station.current_job.id + 1}."
+                    )
+
+        if job.status == DONE and job.location is not None:
+            errors.append(
+                f"J{job.id + 1} est DONE mais location n'est pas None."
+            )
+
+    # --------------------------------------------------
+    # 3. Vérification double occupation station via calendrier
+    # --------------------------------------------------
+    for station in state.all_stations.stations:
+        active_jobs = set()
+
+        for e in station.calendar.events:
+            if e.job is not None and e.event_type in {LOAD, AWAIT}:
+                if e.end > state.start_time:
+                    active_jobs.add(e.job.id)
+
+        if len(active_jobs) > 1:
+            errors.append(
+                f"Station {station.id + 1} semble contenir plusieurs jobs actifs : "
+                f"{[f'J{x + 1}' for x in active_jobs]}"
+            )
+
+    # --------------------------------------------------
+    # 4. Vérification robot HOLD
+    # --------------------------------------------------
+    last_hold = next(
+        (
+            e for e in reversed(state.robot.calendar.events)
+            if e.event_type == HOLD
+        ),
+        None
+    )
+
+    if last_hold is not None:
+        if last_hold.end > state.start_time:
+            if state.robot.current_job is None:
+                errors.append(
+                    f"Robot a un HOLD actif avec J{last_hold.job.id + 1} "
+                    f"jusqu'à {last_hold.end}, mais robot.current_job=None."
+                )
+
+            elif state.robot.current_job.id != last_hold.job.id:
+                errors.append(
+                    f"Robot a un HOLD actif avec J{last_hold.job.id + 1}, "
+                    f"mais robot.current_job=J{state.robot.current_job.id + 1}."
+                )
+
+    # --------------------------------------------------
+    # 5. Vérification opérations
+    # --------------------------------------------------
+    for job in state.job_states:
+        for op in job.operation_states:
+            if op.status == NOT_YET:
+                if op.start != 0 or op.end != 0:
+                    errors.append(
+                        f"J{job.id + 1}-O{op.id + 1} est NOT_YET "
+                        f"mais start={op.start}, end={op.end}."
+                    )
+
+            if op.status == DONE:
+                if op.remaining_time != 0:
+                    errors.append(
+                        f"J{job.id + 1}-O{op.id + 1} est DONE "
+                        f"mais remaining_time={op.remaining_time}."
+                    )
+
+            if op.status == IN_EXECUTION:
+                if op.remaining_time <= 0:
+                    errors.append(
+                        f"J{job.id + 1}-O{op.id + 1} est IN_EXECUTION "
+                        f"mais remaining_time={op.remaining_time}."
+                    )
+
+    # --------------------------------------------------
+    # Affichage en cas d'erreur
+    # --------------------------------------------------
+    if errors:
+        print("\n" + "=" * 80)
+        print(f"❌ INCOHÉRENCE DÉTECTÉE {context}")
+        print("=" * 80)
+
+        for error in errors:
+            print(" -", error)
+
+        print("\n--- ÉTAT COURANT ---")
+        print(f"Cmax={state.cmax}")
+        print(f"start_time={state.start_time}")
+        print(f"robot.free_at={state.robot.free_at}")
+        print(
+            "robot.current_job=",
+            None if state.robot.current_job is None else f"J{state.robot.current_job.id + 1}"
+        )
+
+        print("\nStations:")
+        for station in state.all_stations.stations:
+            print(
+                f"S{station.id + 1}: free_at={station.free_at}, "
+                f"current_job="
+                f"{None if station.current_job is None else 'J' + str(station.current_job.id + 1)}"
+            )
+
+        print("\nJobs:")
+        for job in state.job_states:
+            print(
+                f"J{job.id + 1}: status={job.status}, "
+                f"location={None if job.location is None else LOCATION_NAMES[job.location.position_type]}, "
+                f"current_station="
+                f"{None if job.current_station is None else 'S' + str(job.current_station.id + 1)}, "
+                f"end={job.end}, delay={job.delay}"
+            )
+
+        print("=" * 80)
+
+        raise RuntimeError("Incohérence détectée dans le simulateur.")
+    
+
+
 def simulate(previous_state: State, d: Decision, clone: bool=False) -> State:
     state: State      = previous_state.clone() if clone else previous_state
+    validate_state_consistency(
+        state,
+        context=f"AVANT décision {d}"
+    )
     j: JobState       = state.get_job_by_id(d.job_id)
     o: OperationState = j.operation_states[d.operation_id]
     M: int            = state.M
@@ -82,6 +256,11 @@ def simulate(previous_state: State, d: Decision, clone: bool=False) -> State:
 
     state.compute_obj_values_and_upper_bounds(unloading_time=max(unloading_time_target, unloading_time_pos_job), current_time=robot.free_at)
     state.decisions.append(d)
+    validate_state_consistency(
+        state,
+        context=f"APRÈS décision {d}"
+    )
+
     return state
 
 # (1/4) SEARCH START TIME AND LOAD A JOB ###################################################################
@@ -107,9 +286,20 @@ def search_start_time(state: State, j: JobState, d: Decision, forbidden_station:
 
 def search_best_station_and_load_job(state: State, j: JobState, forbidden_station: StationState, min_start_time: int = 0) -> int:
     min_possible_loaded_time: int = -1
+    
+    print(f"\n[CHECK STATION] Trying to load J{j.id + 1}")
+    for s_debug in state.all_stations.get_possible_stations(j.is_big()):
+        cj = s_debug.current_job
+        if cj is None:
+            print(f"  S{s_debug.id + 1}: current_job=None | free_at={s_debug.free_at}")
+        else:
+            loc = None if cj.location is None else LOCATION_NAMES[cj.location.position_type]
+            last_op = cj.get_last_executed_operation()
+            print(f"  S{s_debug.id + 1}: current_job=J{cj.id + 1} | status={cj.status} | loc={loc} | free_at={s_debug.free_at} | last_op={last_op} | is_done={cj.is_done()}")
+
     selected_station: StationState = None
 
-    for s in state.all_stations.get_possible_stations(j.is_big()):
+    """for s in state.all_stations.get_possible_stations(j.is_big()):
         if forbidden_station is None or s.id != forbidden_station.id:
             possible_loading_time = max(test_loading_time(state, s), min_start_time)
 
@@ -118,7 +308,23 @@ def search_best_station_and_load_job(state: State, j: JobState, forbidden_statio
             ):
                 selected_station = s
                 min_possible_loaded_time = possible_loading_time
+"""
+    for s in state.all_stations.get_possible_stations(j.is_big()):
+        if forbidden_station is not None and s.id == forbidden_station.id:
+            continue
+        possible_loading_time = max(test_loading_time(state, s), min_start_time)
+        
+        if possible_loading_time == float("inf"):
+            continue
+        
+        print(f"  -> candidate S{s.id + 1} for J{j.id + 1}: possible_loading_time={possible_loading_time}, station.current_job={None if s.current_job is None else 'J' + str(s.current_job.id + 1)}")
+    
+        if min_possible_loaded_time < 0 or possible_loading_time < min_possible_loaded_time or (selected_station is not None and selected_station.accept_big and not s.accept_big and possible_loading_time <= (1.015 * min_possible_loaded_time)):
+            selected_station = s
+            min_possible_loaded_time = possible_loading_time
 
+    if selected_station is None:
+        raise RuntimeError(f"No free station available to load J{j.id + 1}. The decision is infeasible at current_time={state.start_time}.")
     prev_unload_time: int = get_loading_time_and_force_unloading_previous(state, j, selected_station)
     prev_unload_time = max(prev_unload_time, min_start_time)
 
@@ -126,6 +332,12 @@ def search_best_station_and_load_job(state: State, j: JobState, forbidden_statio
     return load_time
 
 def load_job_into_station(state: State, job: JobState, station: StationState, L: int, start_loading_time: int):
+    if station is None:
+        raise RuntimeError(f"Cannot load J{job.id + 1}: selected_station is None")
+
+    if station.current_job is not None and station.current_job.id != job.id:
+        raise RuntimeError(f"Station conflict before LOAD: trying to load J{job.id + 1} in S{station.id + 1}, but S{station.id + 1} already contains J{station.current_job.id + 1}.")
+
     start_loading_time = max(start_loading_time, job.job.release_date, station.free_at)
     loaded_time: int   = start_loading_time + L if (station.calendar.has_events() or start_loading_time > 0) else start_loading_time
     station.calendar.add(Event(start=start_loading_time, end=loaded_time, event_type=LOAD, job=job, station=station, source=state.all_stations, dest=state.all_stations))
@@ -133,33 +345,92 @@ def load_job_into_station(state: State, job: JobState, station: StationState, L:
     job.location        = state.all_stations
     job.status          = IN_SYSTEM
     job.current_station = station
+
+    print(f"\n[LOAD] Loading J{job.id + 1} into S{station.id + 1} at t={start_loading_time}")
+    print(f"  Before load: S{station.id + 1}.current_job={None if station.current_job is None else 'J' + str(station.current_job.id + 1)}")
+
     station.current_job = job
     return loaded_time
 
-def get_loading_time_and_force_unloading_previous(state: State, j: JobState, station: StationState) -> int: 
-    if station.current_job == None: # Case 1: station is free
+def get_loading_time_and_force_unloading_previous(state: State, j: JobState, station: StationState) -> int:
+
+    if station is None:
+        raise RuntimeError(f"Cannot load J{j.id + 1}: station=None")
+
+    print(f"\n[FORCE UNLOAD CHECK] J{j.id + 1} wants station S{station.id + 1}")
+
+    if station.current_job is None:
+        print(f"  S{station.id + 1} is free")
         return max(0, station.free_at)
-    else: # Case 2: unload the blocking job!
-        current_job: JobState       = station.current_job
-        last_op: OperationState     = current_job.get_last_executed_operation()
-        if current_job.location.position_type == POS_MACHINE_1:
-            robot_move_job_to_station(state, state.robot, current_job, last_op, state.machine1, state.M)
-        elif current_job.location.position_type == POS_MACHINE_2:
-            robot_move_job_to_station(state, state.robot, current_job, last_op, state.machine2, state.M)
-        unloading_start = max(
-            station.free_at,
-            state.robot.free_at,
-            current_job.calendar.events[-1].end
+
+    current_job: JobState = station.current_job
+    last_op: OperationState = current_job.get_last_executed_operation()
+    loc = None if current_job.location is None else LOCATION_NAMES[current_job.location.position_type]
+
+    print(f"  S{station.id + 1} occupied by J{current_job.id + 1}")
+    print(f"  current_job.status={current_job.status}, loc={loc}, is_done={current_job.is_done()}")
+    print(f"  last_op={last_op}, is_last={None if last_op is None else last_op.is_last}")
+
+    if current_job.id == j.id:
+        return max(0, station.free_at)
+
+    if current_job.status == DONE or current_job.location is None or current_job.is_done():
+        station.current_job = None
+        return max(0, station.free_at)
+
+    if last_op is None:
+        raise RuntimeError(
+            f"S{station.id + 1} contains J{current_job.id + 1}, "
+            f"but this job has no executed operation. Cannot load J{j.id + 1} here."
         )
 
-        prev_unload_time: int = unload(
+    if not last_op.is_last:
+        raise RuntimeError(
+            f"S{station.id + 1} contains J{current_job.id + 1}, "
+            f"but this job still has future operations. Cannot load J{j.id + 1} here."
+        )
+
+    if current_job.location.position_type == POS_MACHINE_1:
+        robot_move_job_to_station(
             state,
+            state.robot,
             current_job,
             last_op,
-            state.L,
-            unloading_start=unloading_start
+            state.machine1,
+            state.M
         )
-        return prev_unload_time
+
+    elif current_job.location.position_type == POS_MACHINE_2:
+        robot_move_job_to_station(
+            state,
+            state.robot,
+            current_job,
+            last_op,
+            state.machine2,
+            state.M
+        )
+
+    else:
+        raise RuntimeError(
+            f"S{station.id + 1} contains J{current_job.id + 1}, "
+            f"but it is not on a machine. Cannot load J{j.id + 1} here."
+        )
+
+    unloading_start = max(
+        station.free_at,
+        state.robot.free_at,
+        current_job.calendar.events[-1].end
+    )
+
+    prev_unload_time: int = unload(
+        state,
+        current_job,
+        last_op,
+        state.L,
+        unloading_start=unloading_start
+    )
+
+    return prev_unload_time
 
 """def test_loading_time(state: State, station: StationState) -> int: 
     if station.current_job == None: # Case 1: station is free
@@ -173,7 +444,23 @@ def get_loading_time_and_force_unloading_previous(state: State, j: JobState, sta
         time += state.L
         return time"""
 
-def test_loading_time(state: State, station: StationState) -> int:
+def station_is_available_for_loading(station: StationState, job: JobState) -> bool:
+    """
+    Une station est disponible pour charger job seulement si :
+    - elle est vide
+    - ou elle contient déjà ce même job
+
+    Si elle contient un autre job, elle est occupée.
+    """
+    if station.current_job is None:
+        return True
+
+    if station.current_job.id == job.id:
+        return True
+
+    return False
+
+"""def test_loading_time(state: State, station: StationState) -> int:
     if station.current_job is None:
         return max(0, station.free_at)
 
@@ -194,6 +481,37 @@ def test_loading_time(state: State, station: StationState) -> int:
 
     if current_job.location.position_type == POS_MACHINE_1 or current_job.location.position_type == POS_MACHINE_2:
         time += 2 * state.M if state.robot.location != current_job.location else state.M
+
+    time += state.L
+
+    return time"""
+
+def test_loading_time(state: State, station: StationState) -> int:
+    if station.current_job is None:
+        return max(0, station.free_at)
+
+    current_job: JobState = station.current_job
+
+    if current_job.location is None or current_job.status == DONE or current_job.is_done():
+        return max(0, station.free_at)
+
+    last_op: OperationState = current_job.get_last_executed_operation()
+
+    if last_op is None:
+        return float("inf")
+
+    if not last_op.is_last:
+        return float("inf")
+
+    if current_job.location is None or current_job.location.position_type not in {POS_MACHINE_1, POS_MACHINE_2}:
+        return float("inf")
+
+    time = max(last_op.end, station.free_at, state.robot.free_at)
+
+    if state.robot.location != current_job.location:
+        time += 2 * state.M
+    else:
+        time += state.M
 
     time += state.L
 
@@ -644,7 +962,7 @@ def _cut_robot(new_state: State, cut_time: int):
         #print(f"  Calendrier J{held_job.id+1}:")
         #for e in held_job.calendar.events:
             #print(f"    start={e.start}, end={e.end}, type={EVENT_NAMES[e.event_type]}, op={e.operation.id if e.operation else None}")
-
+"""
 def _fix_robot_held_job(new_state: State, cut_time: int):
     last_hold = next((e for e in reversed(new_state.robot.calendar.events) if e.event_type == HOLD), None)
     if last_hold and last_hold.end > cut_time:
@@ -712,12 +1030,128 @@ def _fix_robot_held_job(new_state: State, cut_time: int):
         new_state.robot.current_job = None
     else:
         new_state.robot.current_job = None
+"""
 
-def _sync_state_after_cut(new_state: State):
-    """
-    Nettoie les incohérences après build_state_from_cut.
-    Une station ne doit pas pointer vers un job terminé ou sans localisation.
-    """
+def _fix_robot_held_job(new_state: State, cut_time: int):
+    last_hold = next(
+        (e for e in reversed(new_state.robot.calendar.events) if e.event_type == HOLD),
+        None
+    )
+
+    if last_hold and last_hold.end > cut_time:
+        held_job = new_state.get_job_by_id(last_hold.job.id)
+        new_state.robot.current_job = held_job
+
+        last_op = held_job.get_last_executed_operation()
+
+        print(
+            f"  _fix_robot: J{held_job.id + 1}, "
+            f"last_op={last_op}, "
+            f"is_last={last_op.is_last if last_op else None}"
+        )
+
+        # Cas 1 : le robot tient un job dont l'opération n'est PAS la dernière
+        # Il ne faut surtout pas mettre current_job à None.
+        if last_op is not None and not last_op.is_last:
+            new_state.robot.location = (
+                new_state.machine1
+                if last_hold.dest.position_type == POS_MACHINE_1
+                else new_state.machine2
+            )
+            new_state.robot.free_at = last_hold.end
+            new_state.robot.current_job = held_job
+            return
+
+        # Cas 2 : le robot tient un job dont l'opération est la dernière
+        # Il doit le ramener à la station puis le job devient DONE.
+        if last_op and last_op.is_last:
+            return_time = new_state.robot.free_at + new_state.M
+
+            new_state.robot.calendar.events.append(Event(
+                start=new_state.robot.free_at,
+                end=return_time,
+                event_type=MOVE,
+                job=held_job,
+                source=new_state.robot.location,
+                dest=new_state.all_stations,
+                operation=last_hold.operation,
+                station=held_job.current_station
+            ))
+
+            held_job.calendar.events.append(Event(
+                start=new_state.robot.free_at,
+                end=return_time,
+                event_type=MOVE,
+                job=held_job,
+                source=new_state.robot.location,
+                dest=new_state.all_stations,
+                operation=last_hold.operation,
+                station=held_job.current_station
+            ))
+
+            new_state.robot.free_at = return_time
+            new_state.robot.location = new_state.all_stations
+
+            unload_end = return_time + new_state.L
+            held_station = held_job.current_station
+
+            if held_station and held_station.calendar.has_events():
+                last_station_end = held_station.calendar.events[-1].end
+
+                if last_station_end < return_time:
+                    held_station.calendar.events.append(Event(
+                        start=last_station_end,
+                        end=return_time,
+                        event_type=AWAIT,
+                        job=held_job,
+                        source=new_state.all_stations,
+                        dest=new_state.all_stations,
+                        operation=last_op,
+                        station=held_station
+                    ))
+
+            held_job.calendar.events.append(Event(
+                start=return_time,
+                end=unload_end,
+                event_type=UNLOAD,
+                job=held_job,
+                source=new_state.all_stations,
+                dest=new_state.all_stations,
+                operation=last_op,
+                station=held_station
+            ))
+
+            if held_station:
+                held_station.calendar.events.append(Event(
+                    start=return_time,
+                    end=unload_end,
+                    event_type=UNLOAD,
+                    job=held_job,
+                    source=new_state.all_stations,
+                    dest=new_state.all_stations,
+                    operation=last_op,
+                    station=held_station
+                ))
+
+                held_station.free_at = unload_end
+                held_station.current_job = None
+
+            held_job.status = DONE
+            held_job.end = unload_end
+            held_job.delay = max(0, unload_end - held_job.job.due_date)
+            held_job.location = None
+
+            last_op.status = DONE
+            last_op.remaining_time = 0
+
+            new_state.robot.current_job = None
+            new_state.robot.free_at = return_time
+            new_state.robot.location = new_state.all_stations
+
+    else:
+        new_state.robot.current_job = None
+
+"""def _sync_state_after_cut(new_state: State):
 
     if new_state.robot.location is None:
         new_state.robot.location = new_state.all_stations
@@ -742,7 +1176,41 @@ def _sync_state_after_cut(new_state: State):
 
         if job.current_station is None or job.current_station.id != station.id:
             station.current_job = None
+            continue"""
+
+def _sync_state_after_cut(new_state: State, cut_time: int):
+    """
+    Une station reste réservée par son job tant que le job n'est pas DONE,
+    même si le job est physiquement sur une machine.
+    """
+
+    if new_state.robot.location is None:
+        new_state.robot.location = new_state.all_stations
+
+    # Nettoyage des stations incohérentes
+    for station in new_state.all_stations.stations:
+        job = station.current_job
+
+        if job is None:
             continue
+
+        if job.status == DONE or job.is_done() or job.location is None:
+            station.current_job = None
+            continue
+
+        if job.current_station is None or job.current_station.id != station.id:
+            station.current_job = None
+            continue
+
+    # Réserver les stations des jobs actifs
+    for job in new_state.job_states:
+        if job.status == DONE or job.is_done() or job.location is None:
+            continue
+
+        if job.current_station is not None:
+            station = job.current_station
+            station.current_job = job
+            station.free_at = max(station.free_at, cut_time)
 
 def _cut_machine(machine, cut_time: int):
     machine.calendar.events = [e for e in machine.calendar.events 
@@ -829,7 +1297,7 @@ def _cut_job_in_execution(j: JobState, in_progress_event, new_state: State, cut_
         new_state.robot.location = in_progress_event.dest
         j.status = IN_SYSTEM
     original_op = in_progress_event.operation
-    if original_op is not None and in_progress_event.event_type in {EXECUTE, HOLD}:
+    """if original_op is not None and in_progress_event.event_type in {EXECUTE, HOLD}:
         cloned_op = j.get_operation(original_op.id)
         if cloned_op is not None:
             cloned_op.status         = IN_EXECUTION
@@ -840,8 +1308,34 @@ def _cut_job_in_execution(j: JobState, in_progress_event, new_state: State, cut_
                     o.status         = DONE
                 elif o.id > cloned_op.id:
                     o.remaining_time = o.operation.processing_time
-                    o.status         = NOT_YET
+                    o.status         = NOT_YET"""
+    if original_op is not None and in_progress_event.event_type in {EXECUTE, HOLD}:
+        cloned_op = j.get_operation(original_op.id)
 
+        if cloned_op is not None:
+            cloned_op.status = IN_EXECUTION
+            cloned_op.remaining_time = max(0, in_progress_event.end - cut_time)
+
+            # On garde seulement la partie encore en cours après cut_time
+            cloned_op.start = cut_time
+            cloned_op.end = in_progress_event.end
+
+            # Après le cut, le job n'est pas encore terminé
+            j.end = 0
+            j.delay = 0
+
+            for o in j.operation_states:
+                if o.id < cloned_op.id:
+                    # Opérations déjà terminées avant le cut
+                    o.remaining_time = 0
+                    o.status = DONE
+
+                elif o.id > cloned_op.id:
+                    # Opérations futures : on annule les anciennes dates
+                    o.remaining_time = o.operation.processing_time
+                    o.status = NOT_YET
+                    o.start = 0
+                    o.end = 0
     elif original_op is not None and in_progress_event.event_type == POS:
         cloned_op = j.get_operation(original_op.id)
         if cloned_op is not None:
@@ -852,10 +1346,14 @@ def _cut_job_in_execution(j: JobState, in_progress_event, new_state: State, cut_
                 if o.id < cloned_op.id:
                     o.remaining_time = 0
                     o.status         = DONE
+                    """elif o.id > cloned_op.id:
+                        o.remaining_time = o.operation.processing_time
+                        o.status         = NOT_YET"""
                 elif o.id > cloned_op.id:
                     o.remaining_time = o.operation.processing_time
-                    o.status         = NOT_YET
-
+                    o.status = NOT_YET
+                    o.start = 0
+                    o.end = 0
     else:
         # MOVE en cours → ops selon leur état réel
         for o in j.operation_states:
@@ -866,8 +1364,8 @@ def _cut_job_in_execution(j: JobState, in_progress_event, new_state: State, cut_
                 o.remaining_time = o.operation.processing_time
                 o.status         = NOT_YET
 
-def _cut_job_in_system(j: JobState, last_event, cut_time: int):
-    """Job dans le système mais pas en exécution → IN_SYSTEM."""
+
+"""def _cut_job_in_system(j: JobState, last_event, cut_time: int):
     j.status   = IN_SYSTEM
     j.location = last_event.dest
     for o in j.operation_states:
@@ -876,7 +1374,30 @@ def _cut_job_in_system(j: JobState, last_event, cut_time: int):
             o.status         = DONE
         else:
             o.remaining_time = o.operation.processing_time
-            o.status         = NOT_YET
+            o.status         = NOT_YET"""
+
+def _cut_job_in_system(j: JobState, last_event, cut_time: int):
+    """
+    Job dans le système mais pas en exécution au cut_time.
+    On garde les opérations terminées avant cut_time.
+    On annule toutes les opérations futures.
+    """
+    j.status = IN_SYSTEM
+    j.location = last_event.dest
+
+    # Le job n'est pas fini à cut_time
+    j.end = 0
+    j.delay = 0
+
+    for o in j.operation_states:
+        if o.end > 0 and o.end <= cut_time:
+            o.remaining_time = 0
+            o.status = DONE
+        else:
+            o.remaining_time = o.operation.processing_time
+            o.status = NOT_YET
+            o.start = 0
+            o.end = 0
 
 def _cut_job(j: JobState, original_job: JobState, new_state: State, cut_time: int):
     """Reconstruit l'état d'un job au cut_time."""
@@ -926,7 +1447,160 @@ def build_state_from_cut(state: State, cut_time: int) -> State:
     
     _clean_robot_obsolete_events(new_state, cut_time)  # 1. nettoyer d'abord
     _fix_robot_held_job(new_state, cut_time)            # 2. ajouter les events post-HOLD après
-    _sync_state_after_cut(new_state)
+    _sync_state_after_cut(new_state, cut_time)
+    validate_state_consistency(
+        new_state,
+        context=f"APRÈS build_state_from_cut cut_time={cut_time}"
+    )
     return new_state
+
+
+def validate_cut_state(state: State, cut_time: int):
+    errors = []
+
+    # Une station ne doit pas pointer vers un job incohérent
+    for s in state.all_stations.stations:
+        if s.current_job is not None:
+            j = s.current_job
+
+            if j.status == DONE or j.location is None:
+                errors.append(
+                    f"Station {s.id + 1} pointe vers J{j.id + 1}, "
+                    f"mais ce job est terminé ou hors système"
+                )
+
+            elif j.current_station is None or j.current_station.id != s.id:
+                errors.append(
+                    f"Station {s.id + 1} pointe vers J{j.id + 1}, "
+                    f"mais J{j.id + 1}.current_station est différent"
+                )
+
+    # Un job dans une station doit être le current_job de sa station
+    for j in state.job_states:
+        if j.location is not None and j.location.position_type == POS_STATION:
+            if j.current_station is None:
+                errors.append(
+                    f"J{j.id + 1} est dans les stations mais current_station=None"
+                )
+            elif j.current_station.current_job is None:
+                errors.append(
+                    f"J{j.id + 1} est dans S{j.current_station.id + 1}, "
+                    f"mais cette station.current_job=None"
+                )
+            elif j.current_station.current_job.id != j.id:
+                errors.append(
+                    f"J{j.id + 1} est dans S{j.current_station.id + 1}, "
+                    f"mais station.current_job=J{j.current_station.current_job.id + 1}"
+                )
+
+    if errors:
+        print("\n❌ ERREURS DANS LE CUT_STATE")
+        for e in errors:
+            print("  -", e)
+        raise RuntimeError("cut_state incohérent après build_state_from_cut")
+
+    print("✅ cut_state cohérent après build_state_from_cut")
+
+
+def display_cut_snapshot(state: State, cut_time: int):
+    print("\n" + "=" * 70)
+    print(f"SNAPSHOT AU CUT_TIME = {cut_time}")
+    print("=" * 70)
+
+    print("\n--- ROBOT ---")
+    robot_loc = (
+        LOCATION_NAMES[state.robot.location.position_type]
+        if state.robot.location is not None
+        else "None"
+    )
+    robot_job = (
+        f"J{state.robot.current_job.id + 1}"
+        if state.robot.current_job is not None
+        else "None"
+    )
+    print(f"robot.free_at      = {state.robot.free_at}")
+    print(f"robot.location     = {robot_loc}")
+    print(f"robot.current_job  = {robot_job}")
+
+    print("\n--- MACHINES ---")
+    for machine_name, machine in [("M1", state.machine1), ("M2", state.machine2)]:
+        last_event = machine.calendar.get_last_event()
+        if last_event is not None and last_event.job is not None:
+            job_name = f"J{last_event.job.id + 1}"
+            op_name = (
+                f"O{last_event.operation.id + 1}"
+                if last_event.operation is not None
+                else "None"
+            )
+            event_type = EVENT_NAMES[last_event.event_type]
+            print(
+                f"{machine_name}: free_at={machine.free_at} | "
+                f"last={event_type} {job_name}-{op_name} "
+                f"[{last_event.start}, {last_event.end}]"
+            )
+        else:
+            print(f"{machine_name}: free_at={machine.free_at} | empty")
+
+    print("\n--- STATIONS ---")
+    for s in state.all_stations.stations:
+        current_job = (
+            f"J{s.current_job.id + 1}"
+            if s.current_job is not None
+            else "None"
+        )
+
+        print(
+            f"Station {s.id + 1}: "
+            f"free_at={s.free_at} | "
+            f"current_job={current_job} | "
+            f"accept_big={s.accept_big}"
+        )
+
+        for e in s.calendar.events:
+            job_name = f"J{e.job.id + 1}" if e.job is not None else "None"
+            op_name = (
+                f"O{e.operation.id + 1}"
+                if e.operation is not None
+                else "None"
+            )
+
+            print(
+                f"    [{e.start}, {e.end}] "
+                f"{EVENT_NAMES[e.event_type]} "
+                f"{job_name}-{op_name}"
+            )
+
+    print("\n--- JOBS ---")
+    for j in state.job_states:
+        loc = (
+            LOCATION_NAMES[j.location.position_type]
+            if j.location is not None
+            else "None"
+        )
+
+        station = (
+            f"S{j.current_station.id + 1}"
+            if j.current_station is not None
+            else "None"
+        )
+
+        ops = []
+        for o in j.operation_states:
+            ops.append(
+                f"O{o.id + 1}:status={o.status},rem={o.remaining_time},"
+                f"start={o.start},end={o.end},type={o.operation.type}"
+            )
+
+        print(
+            f"J{j.id + 1}: "
+            f"status={j.status} | "
+            f"loc={loc} | "
+            f"station={station} | "
+            f"end={j.end} | "
+            f"delay={j.delay} | "
+            f"ops={ops}"
+        )
+
+    print("=" * 70 + "\n")
 
 # END OF FILE! ##########################################################################################

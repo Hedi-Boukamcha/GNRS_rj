@@ -7,7 +7,7 @@ from models.order import OrderInstance
 from models.state import State, JobState
 from models.instance import Job
 from models.agent import Agent
-from simulators.gnn_simulator import build_state_from_cut
+from simulators.gnn_simulator import build_state_from_cut, display_cut_snapshot, validate_cut_state
 from models.environment import Environment
 from gnn_solver_costs import search_possible_decisions, take_one_step
 from conf import *
@@ -22,6 +22,30 @@ __email__   = "hedi.boukamcha.1@ulaval.ca"
 __version__ = "2.0.0" 
 __license__ = "MIT"
 
+
+def save_step_gantt(
+    env,
+    gantt_dir: str | None,
+    label: str,
+    step: int,
+    cut_times: list[int] | None = None
+):
+    if gantt_dir is None:
+        return
+
+    os.makedirs(gantt_dir, exist_ok=True)
+
+    path = os.path.join(
+        gantt_dir,
+        f"{label}_step_{step:03d}.png"
+    )
+
+    gnn_gantt(
+        path,
+        env.state,
+        f"{label} | step {step}",
+        cut_times=cut_times or []
+    )
 
 # Definition de la valeur du retard actuel (de reference)
 def compute_current_schedule_ref(state: State, all_weights: dict) -> tuple[float, int]:
@@ -58,14 +82,25 @@ def compute_weighted_tardiness(job_states: list[JobState]) -> float:
         for j in job_states
     )
 
+def subset_name(subset, new_jobs):
+    if not subset:
+        return "empty"
+
+    return "_".join(
+        f"J{new_jobs.index(job) + 1}"
+        for job in subset
+    )
+
 # Evaluation des nouveaux jobs (sous ensembles): qq soit un seul job ou bien une combinaison de plusieurs jobs
-def evaluate_subset(state: State, subset: list[Job], new_jobs: list[Job], cut_time: int, nb_existing: int, agent: Agent, device: str, all_weights: dict) -> tuple[float, float, float, int]:
+def evaluate_subset(state: State, subset: list[Job], new_jobs: list[Job], cut_time: int, nb_existing: int, agent: Agent, device: str, all_weights: dict, gantt_dir: str | None = None) -> tuple[float, float, float, int]:
     """
     Reschedule le pool existant + le sous-ensemble S.
     Retourne cost_existants, cost_nouveaux, total_cost, cmax.
     """
 
     cut_state = build_state_from_cut(state, cut_time)
+    display_cut_snapshot(cut_state, cut_time)
+    validate_cut_state(cut_state, cut_time)
     cut_state.add_jobs_to_state(subset)
     graph = cut_state.to_hyper_graph_costs(last_job_in_pos=-1, current_time=cut_time, device=device)
     env = Environment(graph=graph, state=cut_state, n=len(cut_state.job_states), action_time=cut_time)
@@ -98,11 +133,30 @@ def evaluate_subset(state: State, subset: list[Job], new_jobs: list[Job], cut_ti
     print(f"    weights nouveaux: {[round(all_weights[id(j.job)], 4) for j in new_jobs_states]}")
     print(f"    weighted tardiness nouveaux: {[round(all_weights[id(j.job)] * j.delay, 4) for j in new_jobs_states]}")
     print(f"    cost_nouveaux={cost_nouveaux:.4f}")
+    
+    if gantt_dir is not None:
+        os.makedirs(gantt_dir, exist_ok=True)
+
+        s_name = subset_name(subset, new_jobs)
+
+        gantt_path = os.path.join(
+            gantt_dir,
+            f"subset_{s_name}_cut_{cut_time}_cmax_{env.state.cmax}_costE_{int(cost_existants)}.png"
+        )
+
+        gnn_gantt(
+            gantt_path,
+            env.state,
+            f"Subset {s_name} | cut={cut_time} | costE={cost_existants:.2f} | cmax={env.state.cmax}",
+            cut_times=[cut_time]
+        )
+
+        print(f"    📊 Gantt subset sauvegardé : {gantt_path}")
 
     return cost_existants, cost_nouveaux, total_cost, env.state.cmax
 
 # Recherche en largeur des nouveaux jobs dans l'arbre
-def bfs_forward(state: State, new_jobs: list[Job], cut_time: int, agent: Agent, device: str, all_weights: dict, delta_ratio: float = 0.2) -> list[Job]:
+def bfs_forward(state: State, new_jobs: list[Job], cut_time: int, agent: Agent, device: str, all_weights: dict, delta_ratio: float = 0.2, gantt_dir: str | None = None) -> list[Job]:
     """
     BFS Forward : explore les sous-ensembles de new_jobs à accepter.
     """
@@ -188,7 +242,8 @@ def bfs_forward(state: State, new_jobs: list[Job], cut_time: int, agent: Agent, 
             nb_existing,
             agent,
             device,
-            all_weights
+            all_weights,
+            gantt_dir=gantt_dir
         )
         print(
             f"cost_existants={cost_existants:.4f} | "
@@ -249,7 +304,7 @@ def bfs_forward(state: State, new_jobs: list[Job], cut_time: int, agent: Agent, 
     return best_subset
 
 
-def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str, delta_ratio: float = 0.2) -> State:
+def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str, delta_ratio: float = 0.2, gantt_dir: str | None = None, save_step_gantts: bool = False) -> State:
     """
     Pipeline complet : schedule Order 1 puis applique le Master Problem pour chaque order suivant.
     """
@@ -266,9 +321,32 @@ def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str,
     # Temps total de toute la méthode d'acceptation
     global_start_time = time.perf_counter()
 
+    step = 0
+
     while env.possible_decisions:
-        action_id = agent.select_next_decision(graph=env.graph, decisionsT=env.decisionsT, greedy=True)
-        env = take_one_step(agent=agent, last_env=env, action_id=action_id, device=device)
+        action_id = agent.select_next_decision(
+            graph=env.graph,
+            decisionsT=env.decisionsT,
+            greedy=True
+        )
+
+        env = take_one_step(
+            agent=agent,
+            last_env=env,
+            action_id=action_id,
+            device=device
+        )
+
+        step += 1
+
+        if save_step_gantts:
+            save_step_gantt(
+                env=env,
+                gantt_dir=gantt_dir,
+                label="order_1",
+                step=step,
+                cut_times=[]
+            )
 
     print(f"Order 1 schedulé | Cmax={env.state.cmax} | Tardiness={sum(j.delay for j in env.state.job_states)}")
     first_order = order_instance.orders[0]
@@ -299,7 +377,25 @@ def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str,
         print(f"\n=== Order {order.id} | cut_time={cut_time} | {len(new_jobs)} nouveaux jobs ===")
 
         # 3. Master Problem → choisir le meilleur sous-ensemble
-        best_subset = bfs_forward(env.state, new_jobs, cut_time, agent, device, all_weights, delta_ratio)
+        #best_subset = bfs_forward(env.state, new_jobs, cut_time, agent, device, all_weights, delta_ratio)
+        subset_gantt_dir = None
+
+        if gantt_dir is not None:
+            subset_gantt_dir = os.path.join(
+                gantt_dir,
+                f"order_{order.id}_subset_tests"
+            )
+
+        best_subset = bfs_forward(
+            env.state,
+            new_jobs,
+            cut_time,
+            agent,
+            device,
+            all_weights,
+            delta_ratio,
+            gantt_dir=subset_gantt_dir
+        )
         
         print(f"\n  === Résultat Order {order.id} ===")
         print(f"  Jobs acceptés  : {[f'J{new_jobs.index(j)+1}(dd={j.due_date})' for j in best_subset]}")
@@ -351,10 +447,42 @@ def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str,
         graph     = cut_state.to_hyper_graph_costs(last_job_in_pos=-1, current_time=cut_time, device=device)
         env       = Environment(graph=graph, state=cut_state, n=len(cut_state.job_states), action_time=cut_time)
         env.possible_decisions, env.decisionsT = search_possible_decisions(env=env, device=device)
+        
+        step = 0
+
+        if save_step_gantts:
+            save_step_gantt(
+                env=env,
+                gantt_dir=gantt_dir,
+                label=f"order_{order.id}_after_acceptance_initial",
+                step=step,
+                cut_times=[cut_time]
+            )
 
         while env.possible_decisions:
-            action_id = agent.select_next_decision(graph=env.graph, decisionsT=env.decisionsT, greedy=True)
-            env = take_one_step(agent=agent, last_env=env, action_id=action_id, device=device)
+            action_id = agent.select_next_decision(
+                graph=env.graph,
+                decisionsT=env.decisionsT,
+                greedy=True
+            )
+
+            env = take_one_step(
+                agent=agent,
+                last_env=env,
+                action_id=action_id,
+                device=device
+            )
+
+            step += 1
+
+            if save_step_gantts:
+                save_step_gantt(
+                    env=env,
+                    gantt_dir=gantt_dir,
+                    label=f"order_{order.id}_after_acceptance",
+                    step=step,
+                    cut_times=[cut_time]
+                )
 
         #print(f"\n=== État J4 après scheduling Order {order.id} ===")
         #print(f"J4 status={env.state.job_states[3].status}")
