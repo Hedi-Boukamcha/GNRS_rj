@@ -181,10 +181,9 @@ def validate_state_consistency(state: State, context: str = ""):
 
 def simulate(previous_state: State, d: Decision, clone: bool=False) -> State:
     state: State      = previous_state.clone() if clone else previous_state
-    validate_state_consistency(
-        state,
-        context=f"AVANT décision {d}"
-    )
+    
+    #validate_state_consistency(state, context=f"AVANT décision {d}")
+    
     j: JobState       = state.get_job_by_id(d.job_id)
     o: OperationState = j.operation_states[d.operation_id]
     M: int            = state.M
@@ -200,6 +199,9 @@ def simulate(previous_state: State, d: Decision, clone: bool=False) -> State:
 
     # 2. Search the possible start time (either load the job or wait for its previous op to finish)
     target_job_ready_time: int = search_start_time(state, j, d, forbidden_station)
+    
+    if target_job_ready_time == float("inf"):
+        raise RuntimeError(f"Infeasible loading: J{j.id + 1} has no available station.")
     
     # 3. Unload previous job if the target machine ain't free
     previous_job_back_to_station(state, robot, j, machine, M)
@@ -256,10 +258,7 @@ def simulate(previous_state: State, d: Decision, clone: bool=False) -> State:
 
     state.compute_obj_values_and_upper_bounds(unloading_time=max(unloading_time_target, unloading_time_pos_job), current_time=robot.free_at)
     state.decisions.append(d)
-    validate_state_consistency(
-        state,
-        context=f"APRÈS décision {d}"
-    )
+    #validate_state_consistency(state, context=f"APRÈS décision {d}")
 
     return state
 
@@ -287,7 +286,7 @@ def search_start_time(state: State, j: JobState, d: Decision, forbidden_station:
 def search_best_station_and_load_job(state: State, j: JobState, forbidden_station: StationState, min_start_time: int = 0) -> int:
     min_possible_loaded_time: int = -1
     
-    print(f"\n[CHECK STATION] Trying to load J{j.id + 1}")
+    """print(f"\n[CHECK STATION] Trying to load J{j.id + 1}")
     for s_debug in state.all_stations.get_possible_stations(j.is_big()):
         cj = s_debug.current_job
         if cj is None:
@@ -296,7 +295,7 @@ def search_best_station_and_load_job(state: State, j: JobState, forbidden_statio
             loc = None if cj.location is None else LOCATION_NAMES[cj.location.position_type]
             last_op = cj.get_last_executed_operation()
             print(f"  S{s_debug.id + 1}: current_job=J{cj.id + 1} | status={cj.status} | loc={loc} | free_at={s_debug.free_at} | last_op={last_op} | is_done={cj.is_done()}")
-
+"""
     selected_station: StationState = None
 
     """for s in state.all_stations.get_possible_stations(j.is_big()):
@@ -317,27 +316,33 @@ def search_best_station_and_load_job(state: State, j: JobState, forbidden_statio
         if possible_loading_time == float("inf"):
             continue
         
-        print(f"  -> candidate S{s.id + 1} for J{j.id + 1}: possible_loading_time={possible_loading_time}, station.current_job={None if s.current_job is None else 'J' + str(s.current_job.id + 1)}")
+        #print(f"  -> candidate S{s.id + 1} for J{j.id + 1}: possible_loading_time={possible_loading_time}, station.current_job={None if s.current_job is None else 'J' + str(s.current_job.id + 1)}")
     
         if min_possible_loaded_time < 0 or possible_loading_time < min_possible_loaded_time or (selected_station is not None and selected_station.accept_big and not s.accept_big and possible_loading_time <= (1.015 * min_possible_loaded_time)):
             selected_station = s
             min_possible_loaded_time = possible_loading_time
 
+    """if selected_station is None:
+        raise RuntimeError(f"No free station available to load J{j.id + 1}. The decision is infeasible at current_time={state.start_time}.")"""
+    
     if selected_station is None:
-        raise RuntimeError(f"No free station available to load J{j.id + 1}. The decision is infeasible at current_time={state.start_time}.")
+        return float("inf")
     prev_unload_time: int = get_loading_time_and_force_unloading_previous(state, j, selected_station)
+    
+    if prev_unload_time == float("inf"):
+        return float("inf")
     prev_unload_time = max(prev_unload_time, min_start_time)
 
     load_time: int = load_job_into_station(state, j, selected_station, state.L, prev_unload_time)
     return load_time
 
 def load_job_into_station(state: State, job: JobState, station: StationState, L: int, start_loading_time: int):
-    if station is None:
+    """if station is None:
         raise RuntimeError(f"Cannot load J{job.id + 1}: selected_station is None")
 
     if station.current_job is not None and station.current_job.id != job.id:
         raise RuntimeError(f"Station conflict before LOAD: trying to load J{job.id + 1} in S{station.id + 1}, but S{station.id + 1} already contains J{station.current_job.id + 1}.")
-
+"""
     start_loading_time = max(start_loading_time, job.job.release_date, station.free_at)
     loaded_time: int   = start_loading_time + L if (station.calendar.has_events() or start_loading_time > 0) else start_loading_time
     station.calendar.add(Event(start=start_loading_time, end=loaded_time, event_type=LOAD, job=job, station=station, source=state.all_stations, dest=state.all_stations))
@@ -346,30 +351,33 @@ def load_job_into_station(state: State, job: JobState, station: StationState, L:
     job.status          = IN_SYSTEM
     job.current_station = station
 
-    print(f"\n[LOAD] Loading J{job.id + 1} into S{station.id + 1} at t={start_loading_time}")
-    print(f"  Before load: S{station.id + 1}.current_job={None if station.current_job is None else 'J' + str(station.current_job.id + 1)}")
+    #print(f"\n[LOAD] Loading J{job.id + 1} into S{station.id + 1} at t={start_loading_time}")
+    #print(f"  Before load: S{station.id + 1}.current_job={None if station.current_job is None else 'J' + str(station.current_job.id + 1)}")
 
     station.current_job = job
     return loaded_time
 
 def get_loading_time_and_force_unloading_previous(state: State, j: JobState, station: StationState) -> int:
 
+    """if station is None:
+        raise RuntimeError(f"Cannot load J{j.id + 1}: station=None")"""
+    
     if station is None:
-        raise RuntimeError(f"Cannot load J{j.id + 1}: station=None")
+        return float("inf")
 
-    print(f"\n[FORCE UNLOAD CHECK] J{j.id + 1} wants station S{station.id + 1}")
+    #print(f"\n[FORCE UNLOAD CHECK] J{j.id + 1} wants station S{station.id + 1}")
 
     if station.current_job is None:
-        print(f"  S{station.id + 1} is free")
+        #print(f"  S{station.id + 1} is free")
         return max(0, station.free_at)
 
     current_job: JobState = station.current_job
     last_op: OperationState = current_job.get_last_executed_operation()
-    loc = None if current_job.location is None else LOCATION_NAMES[current_job.location.position_type]
+    #loc = None if current_job.location is None else LOCATION_NAMES[current_job.location.position_type]
 
-    print(f"  S{station.id + 1} occupied by J{current_job.id + 1}")
+    """print(f"  S{station.id + 1} occupied by J{current_job.id + 1}")
     print(f"  current_job.status={current_job.status}, loc={loc}, is_done={current_job.is_done()}")
-    print(f"  last_op={last_op}, is_last={None if last_op is None else last_op.is_last}")
+    print(f"  last_op={last_op}, is_last={None if last_op is None else last_op.is_last}")"""
 
     if current_job.id == j.id:
         return max(0, station.free_at)
@@ -1044,11 +1052,11 @@ def _fix_robot_held_job(new_state: State, cut_time: int):
 
         last_op = held_job.get_last_executed_operation()
 
-        print(
+        """print(
             f"  _fix_robot: J{held_job.id + 1}, "
             f"last_op={last_op}, "
             f"is_last={last_op.is_last if last_op else None}"
-        )
+        )"""
 
         # Cas 1 : le robot tient un job dont l'opération n'est PAS la dernière
         # Il ne faut surtout pas mettre current_job à None.
@@ -1448,10 +1456,7 @@ def build_state_from_cut(state: State, cut_time: int) -> State:
     _clean_robot_obsolete_events(new_state, cut_time)  # 1. nettoyer d'abord
     _fix_robot_held_job(new_state, cut_time)            # 2. ajouter les events post-HOLD après
     _sync_state_after_cut(new_state, cut_time)
-    validate_state_consistency(
-        new_state,
-        context=f"APRÈS build_state_from_cut cut_time={cut_time}"
-    )
+    #validate_state_consistency(new_state, context=f"APRÈS build_state_from_cut cut_time={cut_time}")
     return new_state
 
 

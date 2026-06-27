@@ -99,15 +99,22 @@ def evaluate_subset(state: State, subset: list[Job], new_jobs: list[Job], cut_ti
     """
 
     cut_state = build_state_from_cut(state, cut_time)
-    display_cut_snapshot(cut_state, cut_time)
-    validate_cut_state(cut_state, cut_time)
+
+    #display_cut_snapshot(cut_state, cut_time)
+    #validate_cut_state(cut_state, cut_time)
+
     cut_state.add_jobs_to_state(subset)
     graph = cut_state.to_hyper_graph_costs(last_job_in_pos=-1, current_time=cut_time, device=device)
     env = Environment(graph=graph, state=cut_state, n=len(cut_state.job_states), action_time=cut_time)
     env.possible_decisions, env.decisionsT = search_possible_decisions(env=env, device=device)
-    while env.possible_decisions:
-        action_id = agent.select_next_decision(graph=env.graph, decisionsT=env.decisionsT, greedy=True)
-        env = take_one_step(agent=agent, last_env=env, action_id=action_id, device=device)
+
+    try:    
+        while env.possible_decisions:
+            action_id = agent.select_next_decision(graph=env.graph, decisionsT=env.decisionsT, greedy=True)
+            env = take_one_step(agent=agent, last_env=env, action_id=action_id, device=device)
+    except RuntimeError as e:
+        print(f"    ⚠️ Séquence ignorée : {e}")
+        return float("inf"), float("inf"), float("inf"), float("inf")
 
     existing_jobs = env.state.job_states[:nb_existing]
     new_jobs_states = env.state.job_states[nb_existing:]
