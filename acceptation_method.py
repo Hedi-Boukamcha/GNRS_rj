@@ -97,9 +97,24 @@ def evaluate_subset(state: State, subset: list[Job], new_jobs: list[Job], cut_ti
     Reschedule le pool existant + le sous-ensemble S.
     Retourne cost_existants, cost_nouveaux, total_cost, cmax.
     """
+    if gantt_dir is not None:
+        os.makedirs(gantt_dir, exist_ok=True)
+
+        existing_gantt_path = os.path.join(
+            gantt_dir,
+            f"existing_only_cut_{cut_time}.png"
+        )
+
+        gnn_gantt(
+            existing_gantt_path,
+            state,
+            f"Existing jobs only | cut={cut_time}",
+            cut_times=[cut_time]
+        )
+
+        print(f"    📊 Gantt existants sauvegardé : {existing_gantt_path}")
 
     cut_state = build_state_from_cut(state, cut_time)
-
     #display_cut_snapshot(cut_state, cut_time)
     #validate_cut_state(cut_state, cut_time)
 
@@ -344,7 +359,82 @@ def bfs_forward(state: State, new_jobs: list[Job], cut_time: int, agent: Agent, 
     return best_subset
 
 
-def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str, delta_ratio: float = 0.2, gantt_dir: str | None = None, save_step_gantts: bool = False) -> State:
+def save_acceptation_analysis_csv(
+    csv_path: str,
+    existing_jobs_final,
+    accepted_new_jobs_final,
+    reference_completion_times: dict
+):
+    import os
+    import csv
+
+    def r2(x):
+        if x == "":
+            return ""
+        if x is None:
+            return ""
+        return round(x, 2)
+
+    os.makedirs(os.path.dirname(csv_path), exist_ok=True)
+
+    with open(csv_path, mode="w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+
+        writer.writerow([
+            "Pool",
+            "job",
+            "Tj",
+            "dj",
+            "(Tj-dj)/dj",
+            "(Tj(nouveau)-Tj(existant))/Tj(existant)"
+        ])
+
+        for j in existing_jobs_final:
+            Tj_existing = reference_completion_times.get(id(j.job), None)
+            Tj_new = j.end
+            dj = j.job.due_date
+
+            ratio_due = (
+                (Tj_existing - dj) / dj
+                if Tj_existing is not None and dj != 0
+                else ""
+            )
+
+            ratio_variation = (
+                (Tj_new - Tj_existing) / Tj_existing
+                if Tj_existing is not None and Tj_existing != 0
+                else ""
+            )
+
+            writer.writerow([
+                "Existants",
+                f"J{j.id + 1}",
+                r2(Tj_existing),
+                r2(dj),
+                r2(ratio_due),
+                r2(ratio_variation)
+            ])
+
+        for j in accepted_new_jobs_final:
+            Tj_new = j.end
+            dj = j.job.due_date
+
+            ratio_due = (
+                (Tj_new - dj) / dj
+                if dj != 0
+                else ""
+            )
+
+            writer.writerow([
+                "Nouveaux acceptés",
+                f"J{j.id + 1}",
+                r2(Tj_new),
+                r2(dj),
+                r2(ratio_due),
+                ""
+            ])
+            
+def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str, delta_ratio: float = 0.2, gantt_dir: str | None = None, save_step_gantts: bool = False, analysis_dir: str | None = None) -> State:
     """
     Pipeline complet : schedule Order 1 puis applique le Master Problem pour chaque order suivant.
     """
@@ -491,43 +581,32 @@ def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str,
         # 4. Reschedule avec le meilleur sous-ensemble
         if len(best_subset) == 0:
             print(f"  Aucun job accepté → planning original conservé")
+
+            if analysis_dir is not None:
+                csv_path = os.path.join(
+                    analysis_dir,
+                    f"order_{order.id}_acceptation.csv"
+                )
+
+                reference_completion_times = {
+                    id(j.job): j.end
+                    for j in env.state.job_states
+                }
+
+                save_acceptation_analysis_csv(
+                    csv_path=csv_path,
+                    existing_jobs_final=env.state.job_states,
+                    accepted_new_jobs_final=[],
+                    reference_completion_times=reference_completion_times
+                )
+
+                print(f"  📄 Tableau analyse sauvegardé : {csv_path}")
+
             continue
 
         cut_state = build_state_from_cut(env.state, cut_time)
         #cut_state.display_calendars()
-        #cut_state.all_stations.stations[1].calendar.display_calendar("STATION 2")
-        #gnn_gantt(f"data/gantts/after_cut_{order.id}.png", env.state, f"after cut {order.id}", cut_times=[cut_time])
-        #cut_state.robot.calendar.display_calendar("ROBOT après cut 3")
-        #cut_state.get_job_by_id(3).calendar.display_calendar("JOB 4 après cut 3")
-        #ut_state.all_stations.stations[2].calendar.display_calendar("STATION 3 après cut 3")
-        #j4 = cut_state.get_job_by_id(3)
-        #print(f"J4 status={j4.status}, location={j4.location}, end={j4.end}")
-        #cut_state.machine2.calendar.display_calendar("MACHINE 2 après cut 3")
-        """print(f"J4 current_station={cut_state.job_states[3].current_station}")
-        print(f"\n=== Calendriers Stations après cut={cut_time} ===")
-        for i, station in enumerate(cut_state.all_stations.stations):
-            print(f"Station {i+1} | free_at={station.free_at} | current_job={station.current_job.id+1 if station.current_job else None}")
-            for e in station.calendar.events:
-                print(f"  start={e.start}, end={e.end}, type={EVENT_NAMES[e.event_type]}, job=J{e.job.id+1 if e.job else None}")
-        print(f"J4 o1.is_last = {cut_state.job_states[3].operation_states[0].is_last}")
-        print(f"\n=== Calendriers après cut={cut_time} ===")
-        print(f"Robot free_at={cut_state.robot.free_at}, location={cut_state.robot.location}")
-        print(f"M1 free_at={cut_state.machine1.free_at}")
-        print(f"M2 free_at={cut_state.machine2.free_at}")"""
-        #for j in cut_state.job_states:
-            #print(f"Job {j.id+1} | status={j.status} | location={j.location} | ops={[(o.status, o.remaining_time) for o in j.operation_states]}")
-        
-        
-        """print(f"\n=== Calendrier J4 cut={cut_time} ===")
-        for e in cut_state.job_states[3].calendar.events:
-            print(f"start={e.start}, end={e.end}, type={EVENT_NAMES[e.event_type]}, op={e.operation.id if e.operation else None}")"""
-
-        #print(f"M1 free_at={cut_state.machine1.free_at}")
-        #print(f"M2 free_at={cut_state.machine2.free_at}")
-        #print(f"J2 status={cut_state.job_states[1].status} | location={cut_state.job_states[1].location}")
-        #print(f"J2 ops={[(o.status, o.remaining_time) for o in cut_state.job_states[1].operation_states]}")
-        #for j in cut_state.job_states:
-            #print(f"Job {j.id+1} | status={j.status} | location={j.location} | ops={[(o.status, o.remaining_time) for o in j.operation_states]}")
+        reference_completion_times = {id(j.job): j.end for j in env.state.job_states}
         cut_state.add_jobs_to_state(best_subset)
         graph     = cut_state.to_hyper_graph_costs(last_job_in_pos=-1, current_time=cut_time, device=device)
         env       = Environment(graph=graph, state=cut_state, n=len(cut_state.job_states), action_time=cut_time)
@@ -634,7 +713,21 @@ def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str,
         #print(f"J4 ops={[(o.status, o.end, o.remaining_time) for o in env.state.job_states[3].operation_states]}")
         #for e in env.state.job_states[3].calendar.events:
             #print(f"  start={e.start}, end={e.end}, type={EVENT_NAMES[e.event_type]}")
-
+        if analysis_dir is not None:
+            csv_path = os.path.join(
+                analysis_dir,
+                f"order_{order.id}_acceptance_analysis.csv"
+            )
+            nb_existing = len(env.state.job_states) - len(best_subset)
+            existing_jobs_final = env.state.job_states[:nb_existing]
+            accepted_jobs_final = env.state.job_states[nb_existing:]
+            save_acceptation_analysis_csv(
+                csv_path=csv_path,
+                existing_jobs_final=existing_jobs_final,
+                accepted_new_jobs_final=accepted_jobs_final,
+                reference_completion_times=reference_completion_times
+            )
+            print(f"  📄 Tableau analyse sauvegardé : {csv_path}")
 
         print(f"Order {order.id} schedulé | Cmax={env.state.cmax} | Tardiness={sum(j.delay for j in env.state.job_states)}")
     global_end_time = time.perf_counter()
