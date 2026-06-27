@@ -336,13 +336,7 @@ def search_best_station_and_load_job(state: State, j: JobState, forbidden_statio
     load_time: int = load_job_into_station(state, j, selected_station, state.L, prev_unload_time)
     return load_time
 
-def load_job_into_station(state: State, job: JobState, station: StationState, L: int, start_loading_time: int):
-    """if station is None:
-        raise RuntimeError(f"Cannot load J{job.id + 1}: selected_station is None")
-
-    if station.current_job is not None and station.current_job.id != job.id:
-        raise RuntimeError(f"Station conflict before LOAD: trying to load J{job.id + 1} in S{station.id + 1}, but S{station.id + 1} already contains J{station.current_job.id + 1}.")
-"""
+"""def load_job_into_station(state: State, job: JobState, station: StationState, L: int, start_loading_time: int):
     start_loading_time = max(start_loading_time, job.job.release_date, station.free_at)
     loaded_time: int   = start_loading_time + L if (station.calendar.has_events() or start_loading_time > 0) else start_loading_time
     station.calendar.add(Event(start=start_loading_time, end=loaded_time, event_type=LOAD, job=job, station=station, source=state.all_stations, dest=state.all_stations))
@@ -350,11 +344,47 @@ def load_job_into_station(state: State, job: JobState, station: StationState, L:
     job.location        = state.all_stations
     job.status          = IN_SYSTEM
     job.current_station = station
-
-    #print(f"\n[LOAD] Loading J{job.id + 1} into S{station.id + 1} at t={start_loading_time}")
-    #print(f"  Before load: S{station.id + 1}.current_job={None if station.current_job is None else 'J' + str(station.current_job.id + 1)}")
-
     station.current_job = job
+    return loaded_time"""
+
+def load_job_into_station(state: State, job: JobState, station: StationState, L: int, start_loading_time: int):
+
+    if station is None:
+        return float("inf")
+
+    start_loading_time = max(start_loading_time, job.job.release_date, station.free_at)
+
+    if station.current_job is not None and station.current_job.id != job.id:
+        return float("inf")
+
+    loaded_time = start_loading_time + L if (station.calendar.has_events() or start_loading_time > 0) else start_loading_time
+
+    station.calendar.add(Event(
+        start=start_loading_time,
+        end=loaded_time,
+        event_type=LOAD,
+        job=job,
+        station=station,
+        source=state.all_stations,
+        dest=state.all_stations
+    ))
+
+    job.calendar.add(Event(
+        start=start_loading_time,
+        end=loaded_time,
+        event_type=LOAD,
+        job=job,
+        station=station,
+        source=state.all_stations,
+        dest=state.all_stations
+    ))
+
+    job.location = state.all_stations
+    job.status = IN_SYSTEM
+    job.current_station = station
+    station.current_job = job
+    station.free_at = loaded_time
+
     return loaded_time
 
 def get_loading_time_and_force_unloading_previous(state: State, j: JobState, station: StationState) -> int:
@@ -387,16 +417,18 @@ def get_loading_time_and_force_unloading_previous(state: State, j: JobState, sta
         return max(0, station.free_at)
 
     if last_op is None:
-        raise RuntimeError(
+        """raise RuntimeError(
             f"S{station.id + 1} contains J{current_job.id + 1}, "
             f"but this job has no executed operation. Cannot load J{j.id + 1} here."
-        )
+        )"""
+        return float("inf")
 
-    if not last_op.is_last:
-        raise RuntimeError(
+    #if not last_op.is_last:
+        """raise RuntimeError(
             f"S{station.id + 1} contains J{current_job.id + 1}, "
             f"but this job still has future operations. Cannot load J{j.id + 1} here."
-        )
+        )"""
+        #return float("inf")
 
     if current_job.location.position_type == POS_MACHINE_1:
         robot_move_job_to_station(
@@ -419,10 +451,11 @@ def get_loading_time_and_force_unloading_previous(state: State, j: JobState, sta
         )
 
     else:
-        raise RuntimeError(
+        """raise RuntimeError(
             f"S{station.id + 1} contains J{current_job.id + 1}, "
             f"but it is not on a machine. Cannot load J{j.id + 1} here."
-        )
+        )"""
+        return float("inf")
 
     unloading_start = max(
         station.free_at,
@@ -506,20 +539,21 @@ def test_loading_time(state: State, station: StationState) -> int:
     last_op: OperationState = current_job.get_last_executed_operation()
 
     if last_op is None:
-        return float("inf")
+        #return float("inf")
+        return max(station.free_at, state.robot.free_at)
 
-    if not last_op.is_last:
-        return float("inf")
 
-    if current_job.location is None or current_job.location.position_type not in {POS_MACHINE_1, POS_MACHINE_2}:
-        return float("inf")
+    #if not last_op.is_last:
+        #return float("inf")
 
     time = max(last_op.end, station.free_at, state.robot.free_at)
 
-    if state.robot.location != current_job.location:
-        time += 2 * state.M
-    else:
-        time += state.M
+    if current_job.location is None or current_job.location.position_type not in {POS_MACHINE_1, POS_MACHINE_2}:
+        #return float("inf")
+        if state.robot.location != current_job.location:
+            time += 2 * state.M
+        else:
+            time += state.M
 
     time += state.L
 

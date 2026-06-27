@@ -108,13 +108,46 @@ def evaluate_subset(state: State, subset: list[Job], new_jobs: list[Job], cut_ti
     env = Environment(graph=graph, state=cut_state, n=len(cut_state.job_states), action_time=cut_time)
     env.possible_decisions, env.decisionsT = search_possible_decisions(env=env, device=device)
 
-    try:    
+    """try:    
         while env.possible_decisions:
             action_id = agent.select_next_decision(graph=env.graph, decisionsT=env.decisionsT, greedy=True)
             env = take_one_step(agent=agent, last_env=env, action_id=action_id, device=device)
     except RuntimeError as e:
         print(f"    ⚠️ Séquence ignorée : {e}")
-        return float("inf"), float("inf"), float("inf"), float("inf")
+        return float("inf"), float("inf"), float("inf"), float("inf")"""
+    
+    while env.possible_decisions:
+        q_values = agent.get_all_q_values(env.graph, env.decisionsT)
+        ranked_actions = sorted(
+            range(len(env.possible_decisions)),
+            key=lambda i: q_values[i].item(),
+            reverse=True
+        )
+
+        success = False
+        last_error = None
+
+        for action_id in ranked_actions:
+            try:
+                trial_env = take_one_step(
+                    agent=agent,
+                    last_env=env,
+                    action_id=action_id,
+                    device=device,
+                    clone=True
+                )
+
+                env = trial_env
+                success = True
+                break
+
+            except RuntimeError as e:
+                last_error = e
+                continue
+
+        if not success:
+            print(f"    ⚠️ Aucune décision faisable à cette étape : {last_error}")
+            return float("inf"), float("inf"), float("inf"), float("inf")
 
     existing_jobs = env.state.job_states[:nb_existing]
     new_jobs_states = env.state.job_states[nb_existing:]
@@ -330,7 +363,7 @@ def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str,
 
     step = 0
 
-    while env.possible_decisions:
+    """while env.possible_decisions:
         action_id = agent.select_next_decision(
             graph=env.graph,
             decisionsT=env.decisionsT,
@@ -353,7 +386,52 @@ def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str,
                 label="order_1",
                 step=step,
                 cut_times=[]
-            )
+            )"""
+    
+    while env.possible_decisions:
+        q_values = agent.get_all_q_values(env.graph, env.decisionsT)
+
+        ranked_actions = sorted(
+            range(len(env.possible_decisions)),
+            key=lambda i: q_values[i].item(),
+            reverse=True
+        )
+
+        success = False
+        last_error = None
+
+        for action_id in ranked_actions:
+            try:
+                trial_env = take_one_step(
+                    agent=agent,
+                    last_env=env,
+                    action_id=action_id,
+                    device=device,
+                    clone=True
+                )
+
+                env = trial_env
+                success = True
+                step += 1
+
+                if save_step_gantts:
+                    save_step_gantt(
+                        env=env,
+                        gantt_dir=gantt_dir,
+                        label="order_1",
+                        step=step,
+                        cut_times=[]
+                    )
+
+                break
+
+            except RuntimeError as e:
+                last_error = e
+                continue
+
+        if not success:
+            print(f"⚠️ Scheduling Order 1 incomplet : {last_error}")
+            break
 
     print(f"Order 1 schedulé | Cmax={env.state.cmax} | Tardiness={sum(j.delay for j in env.state.job_states)}")
     first_order = order_instance.orders[0]
@@ -466,7 +544,7 @@ def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str,
                 cut_times=[cut_time]
             )
 
-        while env.possible_decisions:
+        """while env.possible_decisions:
             action_id = agent.select_next_decision(
                 graph=env.graph,
                 decisionsT=env.decisionsT,
@@ -489,8 +567,68 @@ def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str,
                     label=f"order_{order.id}_after_acceptance",
                     step=step,
                     cut_times=[cut_time]
-                )
+                )"""
+        while env.possible_decisions:
+            q_values = agent.get_all_q_values(env.graph, env.decisionsT)
 
+            ranked_actions = sorted(
+                range(len(env.possible_decisions)),
+                key=lambda i: q_values[i].item(),
+                reverse=True
+            )
+
+            success = False
+            last_error = None
+
+            for action_id in ranked_actions:
+                try:
+                    trial_env = take_one_step(
+                        agent=agent,
+                        last_env=env,
+                        action_id=action_id,
+                        device=device,
+                        clone=True
+                    )
+
+                    env = trial_env
+                    success = True
+                    step += 1
+
+                    if save_step_gantts:
+                        save_step_gantt(
+                            env=env,
+                            gantt_dir=gantt_dir,
+                            label=f"order_{order.id}_after_acceptance",
+                            step=step,
+                            cut_times=[cut_time]
+                        )
+
+                    break
+
+                except RuntimeError as e:
+                    last_error = e
+                    continue
+
+            if not success:
+                print(f"  ⚠️ Scheduling final incomplet pour Order {order.id} : {last_error}")
+                break
+
+        if gantt_dir is not None:
+            os.makedirs(gantt_dir, exist_ok=True)
+
+            final_gantt_path = os.path.join(
+                gantt_dir,
+                f"order_{order.id}_final_after_acceptance_cmax_{env.state.cmax}.png"
+            )
+
+            gnn_gantt(
+                final_gantt_path,
+                env.state,
+                f"Order {order.id} final after acceptance | cmax={env.state.cmax}",
+                cut_times=[cut_time]
+            )
+
+            print(f"  📊 Gantt final sauvegardé : {final_gantt_path}")
         #print(f"\n=== État J4 après scheduling Order {order.id} ===")
         #print(f"J4 status={env.state.job_states[3].status}")
         #print(f"J4 ops={[(o.status, o.end, o.remaining_time) for o in env.state.job_states[3].operation_states]}")
