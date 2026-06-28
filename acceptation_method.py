@@ -91,6 +91,168 @@ def subset_name(subset, new_jobs):
         for job in subset
     )
 
+
+def safe_position_name(pos):
+    if pos is None:
+        return "None"
+
+    if hasattr(pos, "position_type"):
+        try:
+            return LOCATION_NAMES[pos.position_type]
+        except Exception:
+            return f"pos_type={pos.position_type}"
+
+    return str(pos)
+
+
+def safe_event_type_name(event_type):
+    try:
+        return EVENT_NAMES[event_type]
+    except Exception:
+        return str(event_type)
+
+
+def safe_job_name(job):
+    if job is None:
+        return "None"
+    return f"J{job.id + 1}"
+
+
+def safe_operation_name(operation):
+    if operation is None:
+        return "None"
+    return f"O{operation.id + 1}"
+
+
+def safe_station_name(station):
+    if station is None:
+        return "None"
+    return f"S{station.id + 1}"
+
+
+def print_calendar(calendar, title: str):
+    print(f"\n--- {title} ---")
+
+    if calendar is None or not calendar.has_events():
+        print("  Aucun événement")
+        return
+
+    events = sorted(calendar.events, key=lambda e: (e.start, e.end))
+
+    for e in events:
+        print(
+            f"  [{e.start:>4} -> {e.end:>4}] "
+            f"type={safe_event_type_name(e.event_type):<12} | "
+            f"job={safe_job_name(e.job):<5} | "
+            f"op={safe_operation_name(e.operation):<5} | "
+            f"station={safe_station_name(e.station):<5} | "
+            f"source={safe_position_name(e.source):<12} | "
+            f"dest={safe_position_name(e.dest):<12}"
+        )
+
+
+def check_calendar_overlaps(calendar, title: str):
+    if calendar is None or not calendar.has_events():
+        return
+
+    events = sorted(calendar.events, key=lambda e: (e.start, e.end))
+
+    for prev, curr in zip(events, events[1:]):
+        if curr.start < prev.end:
+            print(
+                f"  ⚠️ OVERLAP dans {title}: "
+                f"[{prev.start}->{prev.end}] "
+                f"{safe_event_type_name(prev.event_type)} "
+                f"{safe_job_name(prev.job)} "
+                f"avec "
+                f"[{curr.start}->{curr.end}] "
+                f"{safe_event_type_name(curr.event_type)} "
+                f"{safe_job_name(curr.job)}"
+            )
+
+
+def print_state_calendars(state: State, title: str = ""):
+    print("\n" + "=" * 100)
+    print(f"📅 CALENDRIERS {title}")
+    print("=" * 100)
+
+    print(
+        f"\nSTATE | cmax={state.cmax} | "
+        f"start_time={state.start_time} | "
+        f"total_delay={state.total_delay}"
+    )
+
+    print(
+        f"\nMACHINE 1 | free_at={state.machine1.free_at} | "
+        f"current_job={safe_job_name(state.machine1.current_job)} | "
+        f"pos_is_full={getattr(state.machine1, 'pos_is_full', None)}"
+    )
+    print_calendar(state.machine1.calendar, "MACHINE 1")
+
+    print(
+        f"\nMACHINE 2 | free_at={state.machine2.free_at} | "
+        f"current_job={safe_job_name(state.machine2.current_job)}"
+    )
+    print_calendar(state.machine2.calendar, "MACHINE 2")
+
+    print(
+        f"\nROBOT | free_at={state.robot.free_at} | "
+        f"current_job={safe_job_name(state.robot.current_job)} | "
+        f"location={safe_position_name(state.robot.location)}"
+    )
+    print_calendar(state.robot.calendar, "ROBOT")
+
+    for s in state.all_stations.stations:
+        print(
+            f"\nSTATION S{s.id + 1} | free_at={s.free_at} | "
+            f"current_job={safe_job_name(s.current_job)} | "
+            f"accept_big={s.accept_big}"
+        )
+        print_calendar(s.calendar, f"STATION S{s.id + 1}")
+
+    for j in state.job_states:
+        print(
+            f"\nJOB J{j.id + 1} | "
+            f"status={j.status} | "
+            f"location={safe_position_name(j.location)} | "
+            f"current_station={safe_station_name(j.current_station)} | "
+            f"release={j.job.release_date} | "
+            f"due_date={j.job.due_date} | "
+            f"cost={getattr(j.job, 'cost', 1)} | "
+            f"end={j.end} | "
+            f"delay={j.delay}"
+        )
+
+        for o in j.operation_states:
+            print(
+                f"    O{o.id + 1} | "
+                f"type={o.operation.type} | "
+                f"p={o.operation.processing_time} | "
+                f"remaining={o.remaining_time} | "
+                f"status={o.status} | "
+                f"start={o.start} | "
+                f"end={o.end}"
+            )
+
+        print_calendar(j.calendar, f"JOB J{j.id + 1}")
+
+    print("\n--- CHECK OVERLAPS ---")
+
+    check_calendar_overlaps(state.machine1.calendar, "MACHINE 1")
+    check_calendar_overlaps(state.machine2.calendar, "MACHINE 2")
+    check_calendar_overlaps(state.robot.calendar, "ROBOT")
+
+    for s in state.all_stations.stations:
+        check_calendar_overlaps(s.calendar, f"STATION S{s.id + 1}")
+
+    for j in state.job_states:
+        check_calendar_overlaps(j.calendar, f"JOB J{j.id + 1}")
+
+    print("\n" + "=" * 100)
+    print("FIN CALENDRIERS")
+    print("=" * 100 + "\n")
+
+
 # Evaluation des nouveaux jobs (sous ensembles): qq soit un seul job ou bien une combinaison de plusieurs jobs
 def evaluate_subset(state: State, subset: list[Job], new_jobs: list[Job], cut_time: int, nb_existing: int, agent: Agent, device: str, all_weights: dict, gantt_dir: str | None = None) -> tuple[float, float, float, int]:
     """
@@ -162,6 +324,12 @@ def evaluate_subset(state: State, subset: list[Job], new_jobs: list[Job], cut_ti
 
         if not success:
             print(f"    ⚠️ Aucune décision faisable à cette étape : {last_error}")
+
+            print_state_calendars(
+                env.state,
+                title=f"| subset={subset_name(subset, new_jobs)} | cut={cut_time} | ECHEC"
+            )
+
             return float("inf"), float("inf"), float("inf"), float("inf")
 
     existing_jobs = env.state.job_states[:nb_existing]
@@ -208,7 +376,12 @@ def evaluate_subset(state: State, subset: list[Job], new_jobs: list[Job], cut_ti
 
         print(f"    📊 Gantt subset sauvegardé : {gantt_path}")
 
+    """print_state_calendars(
+        env.state,
+        title=f"| subset={subset_name(subset, new_jobs)} | cut={cut_time} | cmax={env.state.cmax}"
+    )"""
     return cost_existants, cost_nouveaux, total_cost, env.state.cmax
+
 
 # Recherche en largeur des nouveaux jobs dans l'arbre
 def bfs_forward(state: State, new_jobs: list[Job], cut_time: int, agent: Agent, device: str, all_weights: dict, delta_ratio: float = 0.2, gantt_dir: str | None = None) -> list[Job]:
@@ -383,57 +556,86 @@ def save_acceptation_analysis_csv(
         writer.writerow([
             "Pool",
             "job",
-            "Tj",
+            "Tj_initial",
+            "Tj_final",
+            "Diff_Tj",
             "dj",
             "(Tj-dj)/dj",
-            "(Tj(nouveau)-Tj(existant))/Tj(existant)"
+            "((Tj_final)-(Tj_initial))/(Tj_initial)"
         ])
 
         for j in existing_jobs_final:
-            Tj_existing = reference_completion_times.get(id(j.job), None)
-            Tj_new = j.end
             dj = j.job.due_date
 
-            ratio_due = (
-                (Tj_existing - dj) / dj
-                if Tj_existing is not None and dj != 0
-                else ""
+            # Cj dans la cédule de référence, avant acceptation
+            Cj_ref = reference_completion_times.get(id(j.job), None)
+
+            # Retard initial avant acceptation
+            Tj_initial = (
+                max(0, Cj_ref - dj)
+                if Cj_ref is not None
+                else None
             )
 
-            ratio_variation = (
-                (Tj_new - Tj_existing) / Tj_existing
-                if Tj_existing is not None and Tj_existing != 0
-                else ""
+            # Cj après acceptation / insertion des nouveaux jobs
+            Cj_final = j.end
+
+            # Retard final après acceptation
+            Tj_final = max(0, Cj_final - dj)
+
+            diff_Tj = (
+                Tj_final - Tj_initial
+                if Tj_initial is not None
+                else None
+            )
+
+            ratio_due = (
+                Tj_final / dj
+                if dj != 0
+                else None
+            )
+
+            ratio_Tj = (
+                diff_Tj / Tj_initial
+                if Tj_initial is not None and Tj_initial != 0
+                else None
             )
 
             writer.writerow([
                 "Existants",
                 f"J{j.id + 1}",
-                r2(Tj_existing),
+                r2(Tj_initial),
+                r2(Tj_final),
+                r2(diff_Tj),
                 r2(dj),
                 r2(ratio_due),
-                r2(ratio_variation)
+                r2(ratio_Tj),
+                ""
             ])
 
         for j in accepted_new_jobs_final:
-            Tj_new = j.end
             dj = j.job.due_date
 
+            Cj_new = j.end
+            Tj_new = max(0, Cj_new - dj)
+
             ratio_due = (
-                (Tj_new - dj) / dj
+                Tj_new / dj
                 if dj != 0
-                else ""
+                else None
             )
 
             writer.writerow([
                 "Nouveaux acceptés",
                 f"J{j.id + 1}",
-                r2(Tj_new),
+                "",              # Tj_initial : pas applicable pour les nouveaux
+                r2(Tj_new),       # Tj_final
+                "",              # Diff_Tj : pas applicable
                 r2(dj),
                 r2(ratio_due),
+                "",              # Ratio_diff_Tj_initial : pas applicable
                 ""
-            ])
-            
+            ])            
 def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str, delta_ratio: float = 0.2, gantt_dir: str | None = None, save_step_gantts: bool = False, analysis_dir: str | None = None) -> State:
     """
     Pipeline complet : schedule Order 1 puis applique le Master Problem pour chaque order suivant.

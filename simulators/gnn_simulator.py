@@ -199,9 +199,17 @@ def simulate(previous_state: State, d: Decision, clone: bool=False) -> State:
 
     # 2. Search the possible start time (either load the job or wait for its previous op to finish)
     target_job_ready_time: int = search_start_time(state, j, d, forbidden_station)
+    if j.location is None:
+        raise RuntimeError(
+            f"Invalid loading state: J{j.id + 1} has no location after search_start_time. "
+            f"target_job_ready_time={target_job_ready_time}, "
+            f"current_station={j.current_station}, "
+            f"status={j.status}, "
+            f"operation_id={d.operation_id}"
+        )
     
-    if target_job_ready_time == float("inf"):
-        raise RuntimeError(f"Infeasible loading: J{j.id + 1} has no available station.")
+    """if target_job_ready_time == float("inf"):
+        raise RuntimeError(f"Infeasible loading: J{j.id + 1} has no available station.")"""
     
     # 3. Unload previous job if the target machine ain't free
     previous_job_back_to_station(state, robot, j, machine, M)
@@ -283,38 +291,17 @@ def search_start_time(state: State, j: JobState, d: Decision, forbidden_station:
         )
     return start_time
 
-def search_best_station_and_load_job(state: State, j: JobState, forbidden_station: StationState, min_start_time: int = 0) -> int:
+"""def search_best_station_and_load_job(state: State, j: JobState, forbidden_station: StationState, min_start_time: int = 0) -> int:
     min_possible_loaded_time: int = -1
-    
-    """print(f"\n[CHECK STATION] Trying to load J{j.id + 1}")
-    for s_debug in state.all_stations.get_possible_stations(j.is_big()):
-        cj = s_debug.current_job
-        if cj is None:
-            print(f"  S{s_debug.id + 1}: current_job=None | free_at={s_debug.free_at}")
-        else:
-            loc = None if cj.location is None else LOCATION_NAMES[cj.location.position_type]
-            last_op = cj.get_last_executed_operation()
-            print(f"  S{s_debug.id + 1}: current_job=J{cj.id + 1} | status={cj.status} | loc={loc} | free_at={s_debug.free_at} | last_op={last_op} | is_done={cj.is_done()}")
-"""
     selected_station: StationState = None
 
-    """for s in state.all_stations.get_possible_stations(j.is_big()):
-        if forbidden_station is None or s.id != forbidden_station.id:
-            possible_loading_time = max(test_loading_time(state, s), min_start_time)
-
-            if min_possible_loaded_time < 0 or possible_loading_time < min_possible_loaded_time or (
-                selected_station.accept_big and not s.accept_big and possible_loading_time <= (1.015 * min_possible_loaded_time)
-            ):
-                selected_station = s
-                min_possible_loaded_time = possible_loading_time
-"""
     for s in state.all_stations.get_possible_stations(j.is_big()):
         if forbidden_station is not None and s.id == forbidden_station.id:
             continue
         possible_loading_time = max(test_loading_time(state, s), min_start_time)
         
         if possible_loading_time == float("inf"):
-            continue
+            possible_loading_time = max(s.free_at, min_start_time, j.job.release_date)
         
         #print(f"  -> candidate S{s.id + 1} for J{j.id + 1}: possible_loading_time={possible_loading_time}, station.current_job={None if s.current_job is None else 'J' + str(s.current_job.id + 1)}")
     
@@ -322,18 +309,212 @@ def search_best_station_and_load_job(state: State, j: JobState, forbidden_statio
             selected_station = s
             min_possible_loaded_time = possible_loading_time
 
-    """if selected_station is None:
-        raise RuntimeError(f"No free station available to load J{j.id + 1}. The decision is infeasible at current_time={state.start_time}.")"""
-    
+
     if selected_station is None:
-        return float("inf")
+        raise RuntimeError(f"Aucune station compatible trouvée pour J{j.id + 1}. " f"Ce cas ne doit arriver que si aucune station physique n'est compatible.")
     prev_unload_time: int = get_loading_time_and_force_unloading_previous(state, j, selected_station)
     
     if prev_unload_time == float("inf"):
-        return float("inf")
-    prev_unload_time = max(prev_unload_time, min_start_time)
+        prev_unload_time = max(min_possible_loaded_time, min_start_time, j.job.release_date)
+    prev_unload_time = max(prev_unload_time, min_start_time, j.job.release_date)
 
     load_time: int = load_job_into_station(state, j, selected_station, state.L, prev_unload_time)
+    return load_time"""
+
+"""def search_best_station_and_load_job(
+    state: State,
+    j: JobState,
+    forbidden_station: StationState,
+    min_start_time: int = 0
+) -> int:
+    
+    le_stations = state.all_stations.get_possible_stations(j.is_big())
+
+    if len(possible_stations) == 0:
+        raise RuntimeError(
+            f"Aucune station physique compatible pour J{j.id + 1}."
+        )
+
+    # On évite forbidden_station seulement s'il existe une autre station compatible.
+    candidate_stations = [
+        s for s in possible_stations
+        if forbidden_station is None or s.id != forbidden_station.id
+    ]
+
+    # Cas important :
+    # si le job est big et que la seule station compatible est forbidden_station,
+    # on ne retourne pas inf. Le job attend cette station.
+    if len(candidate_stations) == 0:
+        candidate_stations = possible_stations
+
+    selected_station: StationState = None
+    min_possible_loaded_time = float("inf")
+
+    for s in candidate_stations:
+        raw_loading_time = test_loading_time(state, s)
+
+        if raw_loading_time == float("inf"):
+            raw_loading_time = s.free_at
+
+        possible_loading_time = max(
+            raw_loading_time,
+            min_start_time,
+            j.job.release_date
+        )
+
+        if (
+            selected_station is None
+            or possible_loading_time < min_possible_loaded_time
+            or (
+                selected_station.accept_big
+                and not s.accept_big
+                and possible_loading_time <= 1.015 * min_possible_loaded_time
+            )
+        ):
+            selected_station = s
+            min_possible_loaded_time = possible_loading_time
+
+    if selected_station is None:
+        raise RuntimeError(
+            f"Bug: aucune station sélectionnée pour J{j.id + 1}, "
+            f"alors que des stations compatibles existent."
+        )
+
+    prev_unload_time: int = get_loading_time_and_force_unloading_previous(
+        state,
+        j,
+        selected_station
+    )
+
+    if prev_unload_time == float("inf"):
+        prev_unload_time = min_possible_loaded_time
+
+    start_loading_time = max(
+        prev_unload_time,
+        min_start_time,
+        j.job.release_date
+    )
+
+    station_free_before_load = selected_station.free_at
+
+    last_station_end_before_load = (
+        selected_station.calendar.events[-1].end
+        if selected_station.calendar.has_events()
+        else 0
+    )
+
+    load_time: int = load_job_into_station(
+        state,
+        j,
+        selected_station,
+        state.L,
+        start_loading_time
+    )
+
+    print(
+        f"      LOAD J{j.id + 1} -> S{selected_station.id + 1} "
+        f"| release={j.job.release_date} "
+        f"| min_start={min_start_time} "
+        f"| station_free_before={station_free_before_load} "
+        f"| last_station_end_before={last_station_end_before_load} "
+        f"| start_loading={start_loading_time} "
+        f"| load_time={load_time} "
+        f"| station_free_after={selected_station.free_at}"
+    )
+
+    return load_time"""
+
+
+def search_best_station_and_load_job(
+    state: State,
+    j: JobState,
+    forbidden_station: StationState,
+    min_start_time: int = 0
+) -> int:
+    min_possible_loaded_time: int = -1
+    selected_station: StationState = None
+
+    possible_stations = state.all_stations.get_possible_stations(j.is_big())
+
+    candidate_stations = [
+        s for s in possible_stations
+        if forbidden_station is None or s.id != forbidden_station.id
+    ]
+
+    if len(candidate_stations) == 0:
+        candidate_stations = possible_stations
+
+    for s in candidate_stations:
+        possible_loading_time = test_loading_time(state, s)
+
+        if possible_loading_time == float("inf"):
+            continue
+
+        possible_loading_time = max(
+            possible_loading_time,
+            min_start_time,
+            j.job.release_date
+        )
+
+        if (
+            min_possible_loaded_time < 0
+            or possible_loading_time < min_possible_loaded_time
+            or (
+                selected_station is not None
+                and selected_station.accept_big
+                and not s.accept_big
+                and possible_loading_time <= 1.015 * min_possible_loaded_time
+            )
+        ):
+            selected_station = s
+            min_possible_loaded_time = possible_loading_time
+
+    if selected_station is None:
+        raise RuntimeError(
+            f"Aucune station faisable pour charger J{j.id + 1}. "
+            f"Le simulateur ne doit pas forcer un LOAD sur une station occupée."
+        )
+
+    prev_unload_time: int = get_loading_time_and_force_unloading_previous(
+        state,
+        j,
+        selected_station
+    )
+
+    if prev_unload_time == float("inf"):
+        raise RuntimeError(
+            f"Impossible de libérer S{selected_station.id + 1} "
+            f"pour charger J{j.id + 1}."
+        )
+
+    start_loading_time = max(
+        prev_unload_time,
+        min_start_time,
+        j.job.release_date
+    )
+
+    station_free_before_load = selected_station.free_at
+    current_job_before_load = selected_station.current_job
+
+    load_time: int = load_job_into_station(
+        state,
+        j,
+        selected_station,
+        state.L,
+        start_loading_time
+    )
+
+    print(
+        f"      LOAD J{j.id + 1} -> S{selected_station.id + 1} "
+        f"| release={j.job.release_date} "
+        f"| min_start={min_start_time} "
+        f"| station_free_before={station_free_before_load} "
+        #f"| current_job_before={safe_job_name(current_job_before_load) if 'safe_job_name' in globals() else (current_job_before_load.id + 1 if current_job_before_load else None)} "
+        f"| start_loading={start_loading_time} "
+        f"| load_time={load_time} "
+        f"| station_current_after=J{selected_station.current_job.id + 1 if selected_station.current_job else None}"
+    )
+
     return load_time
 
 """def load_job_into_station(state: State, job: JobState, station: StationState, L: int, start_loading_time: int):
@@ -347,7 +528,7 @@ def search_best_station_and_load_job(state: State, j: JobState, forbidden_statio
     station.current_job = job
     return loaded_time"""
 
-def load_job_into_station(state: State, job: JobState, station: StationState, L: int, start_loading_time: int):
+"""def load_job_into_station(state: State, job: JobState, station: StationState, L: int, start_loading_time: int):
 
     if station is None:
         return float("inf")
@@ -385,12 +566,52 @@ def load_job_into_station(state: State, job: JobState, station: StationState, L:
     station.current_job = job
     station.free_at = loaded_time
 
+    return loaded_time"""
+
+def load_job_into_station(
+    state: State,
+    job: JobState,
+    station: StationState,
+    L: int,
+    start_loading_time: int
+):
+    start_loading_time = max(
+        start_loading_time,
+        job.job.release_date
+    )
+    loaded_time: int = start_loading_time + L if station.calendar.has_events() else start_loading_time + L
+    station.calendar.add(
+        Event(
+            start=start_loading_time,
+            end=loaded_time,
+            event_type=LOAD,
+            job=job,
+            station=station,
+            source=state.all_stations,
+            dest=state.all_stations
+        )
+    )
+
+    job.calendar.add(
+        Event(
+            start=start_loading_time,
+            end=loaded_time,
+            event_type=LOAD,
+            job=job,
+            station=station,
+            source=state.all_stations,
+            dest=state.all_stations
+        )
+    )
+
+    job.location = state.all_stations
+    job.status = IN_SYSTEM
+    job.current_station = station
+    station.current_job = job
+
     return loaded_time
 
-def get_loading_time_and_force_unloading_previous(state: State, j: JobState, station: StationState) -> int:
-
-    """if station is None:
-        raise RuntimeError(f"Cannot load J{j.id + 1}: station=None")"""
+"""def get_loading_time_and_force_unloading_previous(state: State, j: JobState, station: StationState) -> int:
     
     if station is None:
         return float("inf")
@@ -405,9 +626,6 @@ def get_loading_time_and_force_unloading_previous(state: State, j: JobState, sta
     last_op: OperationState = current_job.get_last_executed_operation()
     #loc = None if current_job.location is None else LOCATION_NAMES[current_job.location.position_type]
 
-    """print(f"  S{station.id + 1} occupied by J{current_job.id + 1}")
-    print(f"  current_job.status={current_job.status}, loc={loc}, is_done={current_job.is_done()}")
-    print(f"  last_op={last_op}, is_last={None if last_op is None else last_op.is_last}")"""
 
     if current_job.id == j.id:
         return max(0, station.free_at)
@@ -417,18 +635,8 @@ def get_loading_time_and_force_unloading_previous(state: State, j: JobState, sta
         return max(0, station.free_at)
 
     if last_op is None:
-        """raise RuntimeError(
-            f"S{station.id + 1} contains J{current_job.id + 1}, "
-            f"but this job has no executed operation. Cannot load J{j.id + 1} here."
-        )"""
         return float("inf")
 
-    #if not last_op.is_last:
-        """raise RuntimeError(
-            f"S{station.id + 1} contains J{current_job.id + 1}, "
-            f"but this job still has future operations. Cannot load J{j.id + 1} here."
-        )"""
-        #return float("inf")
 
     if current_job.location.position_type == POS_MACHINE_1:
         robot_move_job_to_station(
@@ -451,10 +659,6 @@ def get_loading_time_and_force_unloading_previous(state: State, j: JobState, sta
         )
 
     else:
-        """raise RuntimeError(
-            f"S{station.id + 1} contains J{current_job.id + 1}, "
-            f"but it is not on a machine. Cannot load J{j.id + 1} here."
-        )"""
         return float("inf")
 
     unloading_start = max(
@@ -471,7 +675,85 @@ def get_loading_time_and_force_unloading_previous(state: State, j: JobState, sta
         unloading_start=unloading_start
     )
 
+    return prev_unload_time"""
+
+def get_loading_time_and_force_unloading_previous(
+    state: State,
+    j: JobState,
+    station: StationState
+) -> int:
+    if station is None:
+        return float("inf")
+
+    # Cas 1 : la station est libre
+    if station.current_job is None:
+        return max(
+            0,
+            station.free_at,
+            j.job.release_date
+        )
+
+    # Cas 2 : la station contient déjà un job
+    current_job: JobState = station.current_job
+    last_op: OperationState = current_job.get_last_executed_operation()
+
+    if last_op is None:
+        return float("inf")
+
+    if current_job.location is None:
+        return float("inf")
+
+    # Si le job bloquant est encore sur machine 1, on le ramène aux stations
+    if current_job.location.position_type == POS_MACHINE_1:
+        robot_move_job_to_station(
+            state,
+            state.robot,
+            current_job,
+            last_op,
+            state.machine1,
+            state.M
+        )
+
+    # Si le job bloquant est encore sur machine 2, on le ramène aux stations
+    elif current_job.location.position_type == POS_MACHINE_2:
+        robot_move_job_to_station(
+            state,
+            state.robot,
+            current_job,
+            last_op,
+            state.machine2,
+            state.M
+        )
+
+    # Si le job est déjà aux stations, on ne fait rien
+    elif current_job.location.position_type == POS_STATION:
+        pass
+
+    else:
+        return float("inf")
+
+    # Après déplacement éventuel, on calcule quand on peut décharger le job bloquant
+    last_job_event_end = (
+        current_job.calendar.events[-1].end
+        if current_job.calendar.has_events()
+        else 0
+    )
+
+    unloading_start = max(
+        last_job_event_end,
+        station.free_at
+    )
+
+    prev_unload_time: int = unload(
+        state,
+        current_job,
+        last_op,
+        state.L,
+        unloading_start=unloading_start
+    )
+
     return prev_unload_time
+
 
 """def test_loading_time(state: State, station: StationState) -> int: 
     if station.current_job == None: # Case 1: station is free
@@ -922,6 +1204,17 @@ def robot_move_to_job(state: State, j: JobState, o: OperationState, robot: Robot
                 held_machine,
                 M
             )
+    # Sécurité : le job doit avoir une localisation avant que le robot se déplace vers lui
+    if j.location is None:
+        raise RuntimeError(
+            f"Cannot move robot to J{j.id + 1}: job.location is None. "
+            f"status={j.status}, "
+            f"current_station={j.current_station}, "
+            f"operation=O{o.id + 1}, "
+            f"op_status={o.status}, "
+            f"remaining_time={o.remaining_time}"
+        )
+    
     if robot.location  != j.location:
         # Vérifier si le robot est déjà en route vers ce job
         if robot.calendar.has_events() and robot.calendar.get_last_event().dest == j.location:

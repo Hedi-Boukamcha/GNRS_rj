@@ -301,19 +301,52 @@ def run_all_controlled_instances(
 
 
 # RUN ONE Instance avec Gantt final/subsets, mais sans Gantt étape par étape:
-#inst1
-# python run_controlled_acceptation.py --mode one --input "data/controlled_orders/test/same_costs/inst1/early_1_to_cmax_over_3.json" --scenario "same_costs" --inst "inst1" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
-# python run_controlled_acceptation.py --mode one --input "data/controlled_orders/test/different_costs/inst1/early_1_to_cmax_over_3.json" --scenario "different_costs" --inst "inst1" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
-# python run_controlled_acceptation.py --mode one --input "data/controlled_orders/test/same_costs_dd_serre_N/inst1/early_1_to_cmax_over_3.json" --scenario "same_costs_dd_serre_N" --inst "inst1" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
-# python run_controlled_acceptation.py --mode one --input "data/controlled_orders/test/E_90_100_N_40_50_dd_serre_N/inst1/early_1_to_cmax_over_3.json" --scenario "E_90_100_N_40_50_dd_serre_N" --inst "inst1" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
-# python run_controlled_acceptation.py --mode one --input "data/controlled_orders/test/E_90_100_N_1_10_dd_serre_N/inst1/early_1_to_cmax_over_3.json" --scenario "E_90_100_N_1_10_dd_serre_N" --inst "inst1" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
+
+# inst1
+# early_1_to_cmax_over_3
+# python run_controlled_acceptation.py --mode one --input "data/controlled_orders/test/same_costs/inst1/early_1_to_cmax_over_3.json" --scenario "same_costs" --inst "inst1" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts true
+# python run_controlled_acceptation.py --mode one --input "data/controlled_orders/test/different_costs/inst1/early_1_to_cmax_over_3.json" --scenario "different_costs" --inst "inst1" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts true
+# python run_controlled_acceptation.py --mode one --input "data/controlled_orders/test/same_costs_dd_serre_N/inst1/early_1_to_cmax_over_3.json" --scenario "same_costs_dd_serre_N" --inst "inst1" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts true
+# python run_controlled_acceptation.py --mode one --input "data/controlled_orders/test/E_90_100_N_40_50_dd_serre_N/inst1/early_1_to_cmax_over_3.json" --scenario "E_90_100_N_40_50_dd_serre_N" --inst "inst1" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts true
+# python run_controlled_acceptation.py --mode one --input "data/controlled_orders/test/E_90_100_N_1_10_dd_serre_N/inst1/early_1_to_cmax_over_3.json" --scenario "E_90_100_N_1_10_dd_serre_N" --inst "inst1" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts true
+
+# middle_cmax_over_3_to_cmax_over_2
+# python run_controlled_acceptation.py --mode one --input "data/controlled_orders/test/same_costs/inst1/middle_cmax_over_3_to_cmax_over_2.json" --scenario "same_costs" --inst "inst1" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts true
+# python run_controlled_acceptation.py --mode one --input "data/controlled_orders/test/different_costs/inst1/middle_cmax_over_3_to_cmax_over_2.json" --scenario "different_costs" --inst "inst1" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts true
+# python run_controlled_acceptation.py --mode one --input "data/controlled_orders/test/same_costs_dd_serre_N/inst1/middle_cmax_over_3_to_cmax_over_2.json" --scenario "same_costs_dd_serre_N" --inst "inst1" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts true
+# python run_controlled_acceptation.py --mode one --input "data/controlled_orders/test/E_90_100_N_40_50_dd_serre_N/inst1/middle_cmax_over_3_to_cmax_over_2.json" --scenario "E_90_100_N_40_50_dd_serre_N" --inst "inst1" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts true
+# python run_controlled_acceptation.py --mode one --input "data/controlled_orders/test/E_90_100_N_1_10_dd_serre_N/inst1/middle_cmax_over_3_to_cmax_over_2.json" --scenario "E_90_100_N_1_10_dd_serre_N" --inst "inst1" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts true
+
+# late_cmax_over_2_to_before_cmax
+# python run_controlled_acceptation.py --mode one --input "data/controlled_orders/test/same_costs/inst1/late_cmax_over_2_to_before_cmax.json" --scenario "same_costs" --inst "inst1" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts true
+# python run_controlled_acceptation.py --mode one --input "data/controlled_orders/test/different_costs/inst1/late_cmax_over_2_to_before_cmax.json" --scenario "different_costs" --inst "inst1" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts true
+# python run_controlled_acceptation.py --mode one --input "data/controlled_orders/test/same_costs_dd_serre_N/inst1/late_cmax_over_2_to_before_cmax.json" --scenario "same_costs_dd_serre_N" --inst "inst1" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts true
+# python run_controlled_acceptation.py --mode one --input "data/controlled_orders/test/E_90_100_N_40_50_dd_serre_N/inst1/late_cmax_over_2_to_before_cmax.json" --scenario "E_90_100_N_40_50_dd_serre_N" --inst "inst1" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts true
+# python run_controlled_acceptation.py --mode one --input "data/controlled_orders/test/E_90_100_N_1_10_dd_serre_N/inst1/late_cmax_over_2_to_before_cmax.json" --scenario "E_90_100_N_1_10_dd_serre_N" --inst "inst1" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts true
+
+
 
 #inst2
-# python run_controlled_acceptation.py --mode one --input "data/controlled_orders/test/same_costs/inst2/early_1_to_cmax_over_3.json" --scenario "same_costs" --inst "inst2" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
-# python run_controlled_acceptation.py --mode one --input "data/controlled_orders/test/different_costs/inst2/early_1_to_cmax_over_3.json" --scenario "different_costs" --inst "inst2" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
-# python run_controlled_acceptation.py --mode one --input "data/controlled_orders/test/same_costs_dd_serre_N/inst2/early_1_to_cmax_over_3.json" --scenario "same_costs_dd_serre_N" --inst "inst2" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
-# python run_controlled_acceptation.py --mode one --input "data/controlled_orders/test/E_90_100_N_40_50_dd_serre_N/inst2/early_1_to_cmax_over_3.json" --scenario "E_90_100_N_40_50_dd_serre_N" --inst "inst2" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
-# python run_controlled_acceptation.py --mode one --input "data/controlled_orders/test/E_90_100_N_1_10_dd_serre_N/inst2/early_1_to_cmax_over_3.json" --scenario "E_90_100_N_1_10_dd_serre_N" --inst "inst2" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
+# early_1_to_cmax_over_3
+# python run_controlled_acceptation.py --mode one --input "data/controlled_orders/test/same_costs/inst2/early_1_to_cmax_over_3.json" --scenario "same_costs" --inst "inst1" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
+# python run_controlled_acceptation.py --mode one --input "data/controlled_orders/test/different_costs/inst2/early_1_to_cmax_over_3.json" --scenario "different_costs" --inst "inst1" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
+# python run_controlled_acceptation.py --mode one --input "data/controlled_orders/test/same_costs_dd_serre_N/inst2/early_1_to_cmax_over_3.json" --scenario "same_costs_dd_serre_N" --inst "inst1" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
+# python run_controlled_acceptation.py --mode one --input "data/controlled_orders/test/E_90_100_N_40_50_dd_serre_N/inst2/early_1_to_cmax_over_3.json" --scenario "E_90_100_N_40_50_dd_serre_N" --inst "inst1" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
+# python run_controlled_acceptation.py --mode one --input "data/controlled_orders/test/E_90_100_N_1_10_dd_serre_N/inst2/early_1_to_cmax_over_3.json" --scenario "E_90_100_N_1_10_dd_serre_N" --inst "inst1" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
+
+# middle_cmax_over_3_to_cmax_over_2
+# python run_controlled_acceptation.py --mode one --input "data/controlled_orders/test/same_costs/inst2/middle_cmax_over_3_to_cmax_over_2.json" --scenario "same_costs" --inst "inst2" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
+# python run_controlled_acceptation.py --mode one --input "data/controlled_orders/test/different_costs/inst2/middle_cmax_over_3_to_cmax_over_2.json" --scenario "different_costs" --inst "inst2" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
+# python run_controlled_acceptation.py --mode one --input "data/controlled_orders/test/same_costs_dd_serre_N/inst2/middle_cmax_over_3_to_cmax_over_2.json" --scenario "same_costs_dd_serre_N" --inst "inst2" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
+# python run_controlled_acceptation.py --mode one --input "data/controlled_orders/test/E_90_100_N_40_50_dd_serre_N/inst2/middle_cmax_over_3_to_cmax_over_2.json" --scenario "E_90_100_N_40_50_dd_serre_N" --inst "inst2" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
+# python run_controlled_acceptation.py --mode one --input "data/controlled_orders/test/E_90_100_N_1_10_dd_serre_N/inst2/middle_cmax_over_3_to_cmax_over_2.json" --scenario "E_90_100_N_1_10_dd_serre_N" --inst "inst2" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
+
+# late_cmax_over_2_to_before_cmax
+# python run_controlled_acceptation.py --mode one --input "data/controlled_orders/test/same_costs/inst2/late_cmax_over_2_to_before_cmax.json" --scenario "same_costs" --inst "inst2" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
+# python run_controlled_acceptation.py --mode one --input "data/controlled_orders/test/different_costs/inst2/late_cmax_over_2_to_before_cmax.json" --scenario "different_costs" --inst "inst2" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
+# python run_controlled_acceptation.py --mode one --input "data/controlled_orders/test/same_costs_dd_serre_N/inst2/late_cmax_over_2_to_before_cmax.json" --scenario "same_costs_dd_serre_N" --inst "inst2" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
+# python run_controlled_acceptation.py --mode one --input "data/controlled_orders/test/E_90_100_N_40_50_dd_serre_N/inst2/late_cmax_over_2_to_before_cmax.json" --scenario "E_90_100_N_40_50_dd_serre_N" --inst "inst2" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
+# python run_controlled_acceptation.py --mode one --input "data/controlled_orders/test/E_90_100_N_1_10_dd_serre_N/inst2/late_cmax_over_2_to_before_cmax.json" --scenario "E_90_100_N_1_10_dd_serre_N" --inst "inst2" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
 
 
 # RUN ALL Instances avec un delta, sans Gantt étape par étape:
