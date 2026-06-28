@@ -232,6 +232,8 @@ def run_all_controlled_instances(
     delta_values: list[float],
     device: str,
     agent_path: str,
+    scenario_filter: str = None,
+    inst_filter: str = None,
     save_step_gantts: bool = False,
     generate_gantts: bool = True
 ):
@@ -247,6 +249,9 @@ def run_all_controlled_instances(
 
     root_path = Path(root_dir)
     json_files = sorted(root_path.glob("*/*/*.json"))
+
+    if not json_files:
+        json_files = sorted(root_path.glob("*/*.json"))
 
     if not json_files:
         print(f"Aucune instance trouvée dans : {root_dir}")
@@ -268,6 +273,24 @@ def run_all_controlled_instances(
             scenario = input_file.parent.parent.name
             inst = input_file.parent.name
             variant = input_file.stem
+
+            parts = input_file.relative_to(root_path).parts
+            if len(parts) == 3:
+                scenario = parts[0]
+                inst = parts[1]
+                variant = input_file.stem
+            elif len(parts) == 2:
+                scenario = root_path.name
+                inst = parts[0]
+                variant = input_file.stem
+            else:
+                continue
+
+            if scenario_filter is not None and scenario != scenario_filter:
+                continue
+
+            if inst_filter is not None and inst != inst_filter:
+                continue
 
             print("\n" + "#" * 80)
             print(f"Scenario : {scenario}")
@@ -350,10 +373,10 @@ def run_all_controlled_instances(
 
 
 # RUN ALL Instances avec un delta, sans Gantt étape par étape:
-# python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts true
+# python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
 
 # RUN ALL Instances avec plusieurs deltas, sans Gantt étape par étape:
-# python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test" --deltas 0.0 0.1 0.2 0.3 --device mps --agent_path "data/training_costs/" --generate_gantts true
+# python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test" --deltas 0.0 0.1 0.2 0.3 --device mps --agent_path "data/training_costs/" --generate_gantts false
 
 # ============================================================
 # RUN PAR TYPE / SCÉNARIO
@@ -377,6 +400,23 @@ def run_all_controlled_instances(
 # RUN tous les types / scénarios avec plusieurs deltas :
 # python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test" --deltas 0.0 0.1 0.2 0.3 --device mps --agent_path "data/training_costs/" --generate_gantts false
 
+# ================
+# RUN tout Inst1 et tout Inst2 :
+# Inst1
+# python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test/same_costs/inst1/" --inst_filter "inst1" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
+# python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test/different_costs" --inst_filter "inst1" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
+# python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test/same_costs_dd_serre_N" --inst_filter "inst1" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
+# python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test/E_90_100_N_40_50_dd_serre_N" --inst_filter "inst1" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
+# python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test/E_90_100_N_1_10_dd_serre_N/" --inst_filter "inst1" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
+
+# Inst2
+# python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test/same_costs" --inst_filter "inst2" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
+# python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test/different_costs" --inst_filter "inst2" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
+# python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test/same_costs_dd_serre_N" --inst_filter "inst2" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
+# python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test/E_90_100_N_40_50_dd_serre_N" --inst_filter "inst2" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
+# python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test/E_90_100_N_1_10_dd_serre_N/" --inst_filter "inst2" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
+
+
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
@@ -384,7 +424,8 @@ if __name__ == "__main__":
     parser.add_argument("--input", type=str, default=None, help="Chemin vers une instance JSON unique")
     parser.add_argument("--root_dir", type=str, default="data/controlled_orders/test", help="Dossier racine contenant toutes les familles d'instances")
     parser.add_argument("--output_root", type=str, default="results/controlled_orders/test", help="Dossier racine des résultats")
-    parser.add_argument("--scenario", type=str, default=None, help="Nom du scénario, ex: same_costs")
+    parser.add_argument("--scenario_filter", type=str, default=None, help="Nom du scénario, ex: same_costs")
+    parser.add_argument("--inst_filter", type=str, default=None, help="Filtrer une instance spécifique, ex: inst1, inst2")
     parser.add_argument("--inst", type=str, default=None, help="Nom de l'instance, ex: inst1")
     parser.add_argument("--delta_ratio", type=float, default=0.2, help="Ratio delta pour la méthode d'acceptation")
     parser.add_argument("--deltas", type=float, nargs="+", default=None, help="Liste de deltas, ex: --deltas 0.0 0.1 0.2 0.3")
@@ -404,9 +445,11 @@ if __name__ == "__main__":
             delta_values=delta_values,
             device=args.device,
             agent_path=args.agent_path,
+            scenario_filter=args.scenario_filter,
+            inst_filter=args.inst_filter,
             save_step_gantts=args.save_step_gantts,
             generate_gantts=generate_gantts
-        )       
+        ) 
     else:
         if args.input is None: raise ValueError("En mode one, tu dois fournir --input")
         if args.scenario is None: raise ValueError("En mode one, tu dois fournir --scenario")
