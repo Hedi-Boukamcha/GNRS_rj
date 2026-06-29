@@ -403,7 +403,7 @@ def run_all_controlled_instances(
 # ================
 # RUN tout Inst1 et tout Inst2 :
 # Inst1
-# python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test/same_costs/inst1/" --inst_filter "inst1" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
+# python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test/same_costs" --inst_filter "inst1" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
 # python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test/different_costs" --inst_filter "inst1" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
 # python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test/same_costs_dd_serre_N" --inst_filter "inst1" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
 # python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test/E_90_100_N_40_50_dd_serre_N" --inst_filter "inst1" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false

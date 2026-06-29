@@ -208,6 +208,45 @@ def save_json(instance: dict, path: str):
     print(f"Saved: {path}")
 
 
+def recompute_relative_due_dates(
+    jobs_template: list[dict],
+    due_slack_min: int,
+    due_slack_max: int
+) -> list[dict]:
+    jobs = copy.deepcopy(jobs_template)
+
+    for job in jobs:
+        nb_operations = len(job["operations"])
+        proc_total = sum(op["processing_time"] for op in job["operations"])
+
+        min_treat_time = (
+            proc_total
+            + (2 * L + job["pos_time"])
+            + nb_operations * (2 * M)
+        )
+
+        job["relative_due"] = (
+            job["relative_release"]
+            + min_treat_time
+            + random.randint(due_slack_min, due_slack_max)
+        )
+
+    return jobs
+
+
+def apply_costs_to_template(
+    jobs_template: list[dict],
+    cost_min: int,
+    cost_max: int
+) -> list[dict]:
+    jobs = copy.deepcopy(jobs_template)
+
+    for job in jobs:
+        job["cost"] = random.randint(cost_min, cost_max)
+
+    return jobs
+
+
 def generate_controlled_orders(
     output_root: str = "data/controlled_orders/test",
     max_operations_per_job: int = 2,
@@ -220,14 +259,16 @@ def generate_controlled_orders(
     seed: int = 1
 ):
     """
-    Génère tous les scénarios :
-    - different_costs
-    - same_costs
-    - E[90,100]_N[40,50]_dd_serre_N
-    - E[90,100]_N[1,10]_dd_serre_N
-    - same_costs_dd_serre_N
+    Génère des instances contrôlées.
 
-    Dans chaque inst, les 3 fichiers ne changent que par cut_time.
+    Principe :
+    - même instance de base pour tous les scénarios
+    - mêmes opérations
+    - mêmes big/small
+    - mêmes release dates relatives
+    - mêmes cut_time
+    - seuls les coûts changent selon le scénario
+    - les due dates des nouveaux jobs changent seulement pour les scénarios dd_serre_N
     """
 
     random.seed(seed)
@@ -249,79 +290,125 @@ def generate_controlled_orders(
         )
     }
 
-    for scenario_name, scenario in SCENARIOS.items():
+    # Slacks normaux pour les nouveaux jobs
+    normal_new_due_slack_min, normal_new_due_slack_max = SCENARIOS["same_costs"]["new_due_slack"]
 
-        existing_cost_min, existing_cost_max = scenario["existing_cost_range"]
-        new_cost_min, new_cost_max = scenario["new_cost_range"]
-        new_due_slack_min, new_due_slack_max = scenario["new_due_slack"]
+    # Slacks serrés pour les nouveaux jobs
+    tight_new_due_slack_min, tight_new_due_slack_max = SCENARIOS["same_costs_dd_serre_N"]["new_due_slack"]
 
-        scenario_folder = os.path.join(output_root, scenario_name)
+    for family_name, config in FAMILIES_CONFIG.items():
+
+        nb_initial_jobs = config["nb_initial_jobs"]
+        nb_new_jobs = config["nb_new_jobs"]
+
+        estimated_cmax = estimate_cmax_order(
+            nb_jobs=nb_initial_jobs,
+            max_operations_per_job=max_operations_per_job,
+            max_duration=max_duration,
+            pos_time=pos_time
+        )
+
+        # Même a pour tous les scénarios de cette instance
+        a = random.randint(0, 10) * 10
+
+        # --------------------------------------------------
+        # 1) Génération de l'instance de base UNE SEULE FOIS
+        # --------------------------------------------------
+
+        base_initial_jobs_template = generate_order_template(
+            nb_jobs=nb_initial_jobs,
+            max_operations_per_job=max_operations_per_job,
+            min_duration=min_duration,
+            max_duration=max_duration,
+            pos_time=pos_time,
+            release_spread=release_spread_existing,
+            due_slack_min=existing_due_slack[0],
+            due_slack_max=existing_due_slack[1],
+            cost_min=1,
+            cost_max=1
+        )
+
+        base_new_jobs_template_normal = generate_order_template(
+            nb_jobs=nb_new_jobs,
+            max_operations_per_job=max_operations_per_job,
+            min_duration=min_duration,
+            max_duration=max_duration,
+            pos_time=pos_time,
+            release_spread=release_spread_new,
+            due_slack_min=normal_new_due_slack_min,
+            due_slack_max=normal_new_due_slack_max,
+            cost_min=1,
+            cost_max=1
+        )
+
+        # Même structure et mêmes release dates, mais due dates serrées
+        base_new_jobs_template_tight = recompute_relative_due_dates(
+            jobs_template=base_new_jobs_template_normal,
+            due_slack_min=tight_new_due_slack_min,
+            due_slack_max=tight_new_due_slack_max
+        )
+
+        # --------------------------------------------------
+        # 2) Génération des cut_time UNE SEULE FOIS
+        # --------------------------------------------------
+
+        used_cut_times = set()
+        fixed_cut_times = {}
+
+        for variant_name, cut_rule in cut_time_variants.items():
+
+            cut_time = cut_rule(estimated_cmax)
+
+            while cut_time in used_cut_times:
+                cut_time = cut_rule(estimated_cmax)
+
+            used_cut_times.add(cut_time)
+            fixed_cut_times[variant_name] = cut_time
 
         print("\n==================================================")
-        print(f"SCENARIO: {scenario_name}")
+        print(f"FAMILY: {family_name}")
         print("==================================================")
+        print(f"  total jobs      = {nb_initial_jobs + nb_new_jobs}")
+        print(f"  existing jobs   = {nb_initial_jobs}")
+        print(f"  new jobs        = {nb_new_jobs}")
+        print(f"  estimated_cmax  = {estimated_cmax}")
+        print(f"  cut_times       = {fixed_cut_times}")
 
-        for family_name, config in FAMILIES_CONFIG.items():
+        # --------------------------------------------------
+        # 3) Application des scénarios
+        # --------------------------------------------------
 
-            nb_initial_jobs = config["nb_initial_jobs"]
-            nb_new_jobs = config["nb_new_jobs"]
+        for scenario_name, scenario in SCENARIOS.items():
 
-            # Même template pour les 3 variantes de ce family/scenario
-            initial_jobs_template = generate_order_template(
-                nb_jobs=nb_initial_jobs,
-                max_operations_per_job=max_operations_per_job,
-                min_duration=min_duration,
-                max_duration=max_duration,
-                pos_time=pos_time,
-                release_spread=release_spread_existing,
-                due_slack_min=existing_due_slack[0],
-                due_slack_max=existing_due_slack[1],
-                cost_min=existing_cost_min,
-                cost_max=existing_cost_max
-            )
+            existing_cost_min, existing_cost_max = scenario["existing_cost_range"]
+            new_cost_min, new_cost_max = scenario["new_cost_range"]
 
-            new_jobs_template = generate_order_template(
-                nb_jobs=nb_new_jobs,
-                max_operations_per_job=max_operations_per_job,
-                min_duration=min_duration,
-                max_duration=max_duration,
-                pos_time=pos_time,
-                release_spread=release_spread_new,
-                due_slack_min=new_due_slack_min,
-                due_slack_max=new_due_slack_max,
-                cost_min=new_cost_min,
-                cost_max=new_cost_max
-            )
-
-            estimated_cmax = estimate_cmax_order(
-                nb_jobs=nb_initial_jobs,
-                max_operations_per_job=max_operations_per_job,
-                max_duration=max_duration,
-                pos_time=pos_time
-            )
-
-            a = random.randint(0, 10) * 10
-
+            scenario_folder = os.path.join(output_root, scenario_name)
             family_folder = os.path.join(scenario_folder, family_name)
             os.makedirs(family_folder, exist_ok=True)
 
             print(f"\n{scenario_name}/{family_name}")
-            print(f"  total jobs      = {nb_initial_jobs + nb_new_jobs}")
-            print(f"  existing jobs   = {nb_initial_jobs}")
-            print(f"  new jobs        = {nb_new_jobs}")
-            print(f"  estimated_cmax  = {estimated_cmax}")
 
-            used_cut_times = set()
+            # Même instance de base, seuls les coûts changent
+            initial_jobs_template = apply_costs_to_template(
+                jobs_template=base_initial_jobs_template,
+                cost_min=existing_cost_min,
+                cost_max=existing_cost_max
+            )
 
-            for variant_name, cut_rule in cut_time_variants.items():
+            # Si scénario avec dj serré pour les nouveaux jobs
+            if "dd_serre_N" in scenario_name:
+                selected_new_jobs_base = base_new_jobs_template_tight
+            else:
+                selected_new_jobs_base = base_new_jobs_template_normal
 
-                cut_time = cut_rule(estimated_cmax)
+            new_jobs_template = apply_costs_to_template(
+                jobs_template=selected_new_jobs_base,
+                cost_min=new_cost_min,
+                cost_max=new_cost_max
+            )
 
-                # Évite rarement d'avoir deux variantes avec le même cut_time
-                while cut_time in used_cut_times:
-                    cut_time = cut_rule(estimated_cmax)
-
-                used_cut_times.add(cut_time)
+            for variant_name, cut_time in fixed_cut_times.items():
 
                 instance = build_instance_from_templates(
                     initial_jobs_template=initial_jobs_template,
@@ -343,7 +430,6 @@ def generate_controlled_orders(
                 )
 
                 save_json(instance, output_path)
-
 
 if __name__ == "__main__":
     generate_controlled_orders(
