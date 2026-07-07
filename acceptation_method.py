@@ -590,7 +590,7 @@ def save_acceptation_analysis_csv(
             )
 
             ratio_due = (
-                Tj_final / dj
+                Tj_final - dj / dj
                 if dj != 0
                 else None
             )

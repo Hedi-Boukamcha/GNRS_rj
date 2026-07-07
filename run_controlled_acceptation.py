@@ -386,13 +386,22 @@ def run_all_controlled_instances(
 # python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test" --scenario_filter "same_costs" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
 
 # RUN seulement same_costs avec plusieurs deltas :
-# python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test" --scenario_filter "same_costs" --deltas 0.0 0.1 0.2 0.3 --device mps --agent_path "data/training_costs/" --generate_gantts false
+# python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test" --scenario_filter "same_costs" --deltas 0.2 0.5 0.8 --device mps --agent_path "data/training_costs/" --generate_gantts false
+# python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test" --scenario_filter "same_costs_25" --deltas 0.2 0.5 0.8 --device mps --agent_path "data/training_costs/" --generate_gantts false
+# python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test" --scenario_filter "same_costs_50" --deltas 0.2 0.5 0.8 --device mps --agent_path "data/training_costs/" --generate_gantts false
+# python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test" --scenario_filter "same_costs_100" --deltas 0.2 0.5 0.8 --device mps --agent_path "data/training_costs/" --generate_gantts false
 
 # RUN seulement different_costs avec un delta :
 # python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test" --scenario_filter "different_costs" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
 
 # RUN seulement different_costs avec plusieurs deltas :
-# python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test" --scenario_filter "different_costs" --deltas 0.0 0.1 0.2 0.3 --device mps --agent_path "data/training_costs/" --generate_gantts false
+# python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test" --scenario_filter "different_costs" --deltas 0.2 0.5 0.8 --device mps --agent_path "data/training_costs/" --generate_gantts false
+# python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test" --scenario_filter "different_costs_100_50" --deltas 0.2 0.5 0.8 --device mps --agent_path "data/training_costs/" --generate_gantts false
+# python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test" --scenario_filter "different_costs_100_25" --deltas 0.2 0.5 0.8 --device mps --agent_path "data/training_costs/" --generate_gantts false
+# python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test" --scenario_filter "different_costs_50_25" --deltas 0.2 0.5 0.8 --device mps --agent_path "data/training_costs/" --generate_gantts false
+# python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test" --scenario_filter "different_costs_25_50" --deltas 0.2 0.5 0.8 --device mps --agent_path "data/training_costs/" --generate_gantts false
+# python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test" --scenario_filter "different_costs_25_100" --deltas 0.2 0.5 0.8 --device mps --agent_path "data/training_costs/" --generate_gantts false
+# python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test" --scenario_filter "different_costs_50_100" --deltas 0.2 0.5 0.8 --device mps --agent_path "data/training_costs/" --generate_gantts false
 
 # RUN tous les types / scénarios avec un delta :
 # python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
