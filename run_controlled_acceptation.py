@@ -388,6 +388,7 @@ def run_all_controlled_instances(
 # RUN seulement same_costs avec plusieurs deltas :
 # python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test" --scenario_filter "same_costs" --deltas 0.2 0.5 0.8 --device mps --agent_path "data/training_costs/" --generate_gantts false
 # python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test" --scenario_filter "same_costs_25" --deltas 0.2 0.5 0.8 --device mps --agent_path "data/training_costs/" --generate_gantts false
+# python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test" --scenario_filter "same_costs_25" --deltas 0.7 1.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
 # python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test" --scenario_filter "same_costs_50" --deltas 0.2 0.5 0.8 --device mps --agent_path "data/training_costs/" --generate_gantts false
 # python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test" --scenario_filter "same_costs_100" --deltas 0.2 0.5 0.8 --device mps --agent_path "data/training_costs/" --generate_gantts false
 
@@ -417,6 +418,17 @@ def run_all_controlled_instances(
 # python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test/same_costs_dd_serre_N" --inst_filter "inst1" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
 # python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test/E_90_100_N_40_50_dd_serre_N" --inst_filter "inst1" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
 # python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test/E_90_100_N_1_10_dd_serre_N/" --inst_filter "inst1" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
+
+# python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test/different_costs_50_25" --inst_filter "inst1" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
+# python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test/different_costs_50_25" --inst_filter "inst1" --delta_ratio 0.5 --device mps --agent_path "data/training_costs/" --generate_gantts false
+# python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test/different_costs_50_25" --inst_filter "inst1" --delta_ratio 0.8 --device mps --agent_path "data/training_costs/" --generate_gantts false
+# python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test/different_costs_100_25" --inst_filter "inst1" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
+# python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test/different_costs_100_25" --inst_filter "inst1" --delta_ratio 0.5 --device mps --agent_path "data/training_costs/" --generate_gantts false
+# python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test/different_costs_100_25" --inst_filter "inst1" --delta_ratio 0.8 --device mps --agent_path "data/training_costs/" --generate_gantts false
+# python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test/different_costs_100_50" --inst_filter "inst1" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
+# python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test/different_costs_100_50" --inst_filter "inst1" --delta_ratio 0.5 --device mps --agent_path "data/training_costs/" --generate_gantts false
+# python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test/different_costs_100_50" --inst_filter "inst1" --delta_ratio 0.8 --device mps --agent_path "data/training_costs/" --generate_gantts false
+
 
 # Inst2
 # python run_controlled_acceptation.py --mode all --root_dir "data/controlled_orders/test/same_costs" --inst_filter "inst2" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
