@@ -423,6 +423,11 @@ class State:
     # hyper graph with costs for the new version of instances
     def to_hyper_graph_costs(self, last_job_in_pos: int, current_time: int, device: str) -> HeteroData:
         graph = HeteroData()
+        # Le cout est normalise par le max de l'instance : seul le rapport entre
+        # jobs compte pour l'objectif, la feature doit etre invariante a l'echelle.
+        max_cost: float = max((float(getattr(j.job, "cost", 1)) for j in self.job_states), default=1.0)
+        if max_cost <= 0:
+            max_cost = 1.0
         job_machine_1: int  = -1
         job_machine_2: int  = -1
         job_robot:     int  = -1
@@ -493,7 +498,7 @@ class State:
                         if idx == len(j.operation_states) -1:
                             nb_last_op_m2  += 1
 
-                cost = float(getattr(j.job, "cost", 1))
+                cost = float(getattr(j.job, "cost", 1)) / max_cost
                 job_features.append([
                         float(j.job.big),                             # 0. Is it a big job that can only use station 2?
                         remaining_time_m1,                            # 1. remaining time in machine 1

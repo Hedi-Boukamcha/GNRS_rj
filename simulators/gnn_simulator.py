@@ -504,17 +504,6 @@ def search_best_station_and_load_job(
         start_loading_time
     )
 
-    print(
-        f"      LOAD J{j.id + 1} -> S{selected_station.id + 1} "
-        f"| release={j.job.release_date} "
-        f"| min_start={min_start_time} "
-        f"| station_free_before={station_free_before_load} "
-        #f"| current_job_before={safe_job_name(current_job_before_load) if 'safe_job_name' in globals() else (current_job_before_load.id + 1 if current_job_before_load else None)} "
-        f"| start_loading={start_loading_time} "
-        f"| load_time={load_time} "
-        f"| station_current_after=J{selected_station.current_job.id + 1 if selected_station.current_job else None}"
-    )
-
     return load_time
 
 """def load_job_into_station(state: State, job: JobState, station: StationState, L: int, start_loading_time: int):
