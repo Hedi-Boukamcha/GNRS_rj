@@ -254,9 +254,68 @@ def print_state_calendars(state: State, title: str = ""):
 
 
 # Evaluation des nouveaux jobs (sous ensembles): qq soit un seul job ou bien une combinaison de plusieurs jobs
+def _find_wait_time(cut_state: State, cut_time: int) -> int | None:
+    """
+    Prochain instant où une opération existante en cours d'exécution au cut se termine.
+    Retourne None si aucune opération n'est en exécution au cut.
+    """
+    ends = []
+    for j in cut_state.job_states:
+        for o in j.operation_states:
+            if o.remaining_time > 0:
+                if o.status == IN_EXECUTION:
+                    last_event = j.calendar.get_last_event()
+                    if last_event and last_event.end > cut_time:
+                        ends.append(last_event.end)
+                break
+    return min(ends) if ends else None
+
+
+def _greedy_rollout(cut_state: State, start_time: int, agent: Agent, device: str) -> Environment | None:
+    """
+    Rollout greedy du GNN depuis start_time sur cut_state (modifié en place).
+    Retourne l'environnement final, ou None si aucune séquence faisable.
+    """
+    cut_state.compute_obj_values_and_upper_bounds(unloading_time=0, current_time=start_time)
+    graph = cut_state.to_hyper_graph_costs(last_job_in_pos=-1, current_time=start_time, device=device)
+    env = Environment(graph=graph, state=cut_state, n=len(cut_state.job_states), action_time=start_time)
+    env.possible_decisions, env.decisionsT = search_possible_decisions(env=env, device=device)
+    while env.possible_decisions:
+        q_values = agent.get_all_q_values(env.graph, env.decisionsT)
+        ranked_actions = sorted(
+            range(len(env.possible_decisions)),
+            key=lambda i: q_values[i].item(),
+            reverse=True
+        )
+        success = False
+        last_error = None
+        for action_id in ranked_actions:
+            try:
+                env = take_one_step(
+                    agent=agent,
+                    last_env=env,
+                    action_id=action_id,
+                    device=device,
+                    clone=True
+                )
+                success = True
+                break
+            except RuntimeError as e:
+                last_error = e
+                continue
+        if not success:
+            print(f"    ⚠️ Aucune décision faisable à cette étape : {last_error}")
+            return None
+    return env
+
+
 def evaluate_subset(state: State, subset: list[Job], new_jobs: list[Job], cut_time: int, nb_existing: int, agent: Agent, device: str, all_weights: dict, gantt_dir: str | None = None) -> tuple[float, float, float, int]:
     """
-    Reschedule le pool existant + le sous-ensemble S.
+    Reschedule le pool existant + le sous-ensemble S en deux branches :
+      - immédiate : re-cédulation dès cut_time (les nouveaux peuvent passer avant les existants) ;
+      - différée  : re-cédulation à la fin de l'opération en cours, où existants et nouveaux
+        sont simultanément actionnables et le GNN arbitre librement selon ses Q-valeurs.
+    La meilleure branche (coût pondéré total, puis cmax) est retenue.
     Retourne cost_existants, cost_nouveaux, total_cost, cmax.
     """
     if gantt_dir is not None:
@@ -281,72 +340,46 @@ def evaluate_subset(state: State, subset: list[Job], new_jobs: list[Job], cut_ti
     #validate_cut_state(cut_state, cut_time)
 
     cut_state.add_jobs_to_state(subset)
-    cut_state.compute_obj_values_and_upper_bounds(unloading_time=0, current_time=cut_time)
-    graph = cut_state.to_hyper_graph_costs(last_job_in_pos=-1, current_time=cut_time, device=device)
-    env = Environment(graph=graph, state=cut_state, n=len(cut_state.job_states), action_time=cut_time)
-    env.possible_decisions, env.decisionsT = search_possible_decisions(env=env, device=device)
+    wait_time = _find_wait_time(cut_state, cut_time)
 
-    """try:    
-        while env.possible_decisions:
-            action_id = agent.select_next_decision(graph=env.graph, decisionsT=env.decisionsT, greedy=True)
-            env = take_one_step(agent=agent, last_env=env, action_id=action_id, device=device)
-    except RuntimeError as e:
-        print(f"    ⚠️ Séquence ignorée : {e}")
-        return float("inf"), float("inf"), float("inf"), float("inf")"""
-    
-    while env.possible_decisions:
-        q_values = agent.get_all_q_values(env.graph, env.decisionsT)
-        ranked_actions = sorted(
-            range(len(env.possible_decisions)),
-            key=lambda i: q_values[i].item(),
-            reverse=True
+    branches = [("immédiate", cut_time, cut_state)]
+    if wait_time is not None and wait_time > cut_time:
+        wait_state = build_state_from_cut(state, wait_time)
+        wait_state.add_jobs_to_state(subset)
+        branches.append(("différée", wait_time, wait_state))
+
+    best_env = None
+    best_costs = None
+    for branch_name, start_time, branch_state in branches:
+        b_env = _greedy_rollout(branch_state, start_time, agent, device)
+        if b_env is None:
+            print(f"    ⚠️ Branche {branch_name} (start={start_time}) infaisable")
+            continue
+        b_existing = b_env.state.job_states[:nb_existing]
+        b_new = b_env.state.job_states[nb_existing:]
+        b_cost_e = sum(all_weights[id(j.job)] * j.delay for j in b_existing)
+        b_cost_n = sum(all_weights[id(j.job)] * j.delay for j in b_new)
+        b_total = b_cost_e + b_cost_n
+        print(
+            f"    branche {branch_name} (start={start_time}): "
+            f"cost_existants={b_cost_e:.4f} | cost_nouveaux={b_cost_n:.4f} | "
+            f"total={b_total:.4f} | cmax={b_env.state.cmax}"
         )
+        if best_env is None or (b_total, b_env.state.cmax) < (best_costs[2], best_env.state.cmax):
+            best_env = b_env
+            best_costs = (b_cost_e, b_cost_n, b_total)
 
-        success = False
-        last_error = None
+    if best_env is None:
+        print_state_calendars(
+            cut_state,
+            title=f"| subset={subset_name(subset, new_jobs)} | cut={cut_time} | ECHEC"
+        )
+        return float("inf"), float("inf"), float("inf"), float("inf")
 
-        for action_id in ranked_actions:
-            try:
-                trial_env = take_one_step(
-                    agent=agent,
-                    last_env=env,
-                    action_id=action_id,
-                    device=device,
-                    clone=True
-                )
-
-                env = trial_env
-                success = True
-                break
-
-            except RuntimeError as e:
-                last_error = e
-                continue
-
-        if not success:
-            print(f"    ⚠️ Aucune décision faisable à cette étape : {last_error}")
-
-            print_state_calendars(
-                env.state,
-                title=f"| subset={subset_name(subset, new_jobs)} | cut={cut_time} | ECHEC"
-            )
-
-            return float("inf"), float("inf"), float("inf"), float("inf")
-
+    env = best_env
     existing_jobs = env.state.job_states[:nb_existing]
     new_jobs_states = env.state.job_states[nb_existing:]
-
-    cost_existants = sum(
-        all_weights[id(j.job)] * j.delay
-        for j in existing_jobs
-    )
-
-    cost_nouveaux = sum(
-        all_weights[id(j.job)] * j.delay
-        for j in new_jobs_states
-    )
-
-    total_cost = cost_existants + cost_nouveaux
+    cost_existants, cost_nouveaux, total_cost = best_costs
 
     print(f"    tardiness existants: {[j.delay for j in existing_jobs]}")
     print(f"    weights existants: {[round(all_weights[id(j.job)], 4) for j in existing_jobs]}")
@@ -807,93 +840,44 @@ def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str,
 
             continue
 
-        cut_state = build_state_from_cut(env.state, cut_time)
-        #cut_state.display_calendars()
-        reference_completion_times = {id(j.job): j.end for j in env.state.job_states}
-        cut_state.add_jobs_to_state(best_subset)
-        graph     = cut_state.to_hyper_graph_costs(last_job_in_pos=-1, current_time=cut_time, device=device)
-        env       = Environment(graph=graph, state=cut_state, n=len(cut_state.job_states), action_time=cut_time)
-        env.possible_decisions, env.decisionsT = search_possible_decisions(env=env, device=device)
-        
-        step = 0
+        # Re-cédulation finale avec les deux mêmes branches que evaluate_subset,
+        # pour que la cédule retenue corresponde à celle qui a justifié l'acceptation.
+        base_state = env.state
+        reference_completion_times = {id(j.job): j.end for j in base_state.job_states}
 
         if save_step_gantts:
-            save_step_gantt(
-                env=env,
-                gantt_dir=gantt_dir,
-                label=f"order_{order.id}_after_acceptance_initial",
-                step=step,
-                cut_times=[cut_time]
+            print("  ℹ️ save_step_gantts non supporté avec la re-cédulation à deux branches — ignoré")
+
+        cut_state = build_state_from_cut(base_state, cut_time)
+        cut_state.add_jobs_to_state(best_subset)
+        wait_time = _find_wait_time(cut_state, cut_time)
+
+        branches = [("immédiate", cut_time, cut_state)]
+        if wait_time is not None and wait_time > cut_time:
+            wait_state = build_state_from_cut(base_state, wait_time)
+            wait_state.add_jobs_to_state(best_subset)
+            branches.append(("différée", wait_time, wait_state))
+
+        best_env = None
+        best_total = None
+        for branch_name, start_time, branch_state in branches:
+            b_env = _greedy_rollout(branch_state, start_time, agent, device)
+            if b_env is None:
+                print(f"  ⚠️ Scheduling final : branche {branch_name} (start={start_time}) infaisable")
+                continue
+            b_total = sum(all_weights[id(j.job)] * j.delay for j in b_env.state.job_states)
+            print(
+                f"  Scheduling final : branche {branch_name} (start={start_time}) → "
+                f"total_cost={b_total:.4f} | cmax={b_env.state.cmax}"
             )
+            if best_env is None or (b_total, b_env.state.cmax) < (best_total, best_env.state.cmax):
+                best_env = b_env
+                best_total = b_total
 
-        """while env.possible_decisions:
-            action_id = agent.select_next_decision(
-                graph=env.graph,
-                decisionsT=env.decisionsT,
-                greedy=True
-            )
-
-            env = take_one_step(
-                agent=agent,
-                last_env=env,
-                action_id=action_id,
-                device=device
-            )
-
-            step += 1
-
-            if save_step_gantts:
-                save_step_gantt(
-                    env=env,
-                    gantt_dir=gantt_dir,
-                    label=f"order_{order.id}_after_acceptance",
-                    step=step,
-                    cut_times=[cut_time]
-                )"""
-        while env.possible_decisions:
-            q_values = agent.get_all_q_values(env.graph, env.decisionsT)
-
-            ranked_actions = sorted(
-                range(len(env.possible_decisions)),
-                key=lambda i: q_values[i].item(),
-                reverse=True
-            )
-
-            success = False
-            last_error = None
-
-            for action_id in ranked_actions:
-                try:
-                    trial_env = take_one_step(
-                        agent=agent,
-                        last_env=env,
-                        action_id=action_id,
-                        device=device,
-                        clone=True
-                    )
-
-                    env = trial_env
-                    success = True
-                    step += 1
-
-                    if save_step_gantts:
-                        save_step_gantt(
-                            env=env,
-                            gantt_dir=gantt_dir,
-                            label=f"order_{order.id}_after_acceptance",
-                            step=step,
-                            cut_times=[cut_time]
-                        )
-
-                    break
-
-                except RuntimeError as e:
-                    last_error = e
-                    continue
-
-            if not success:
-                print(f"  ⚠️ Scheduling final incomplet pour Order {order.id} : {last_error}")
-                break
+        if best_env is None:
+            print(f"  ⚠️ Scheduling final incomplet pour Order {order.id} : aucune branche faisable")
+        else:
+            env = best_env
 
         if gantt_dir is not None:
             os.makedirs(gantt_dir, exist_ok=True)
