@@ -281,6 +281,7 @@ def evaluate_subset(state: State, subset: list[Job], new_jobs: list[Job], cut_ti
     #validate_cut_state(cut_state, cut_time)
 
     cut_state.add_jobs_to_state(subset)
+    cut_state.compute_obj_values_and_upper_bounds(unloading_time=0, current_time=cut_time)
     graph = cut_state.to_hyper_graph_costs(last_job_in_pos=-1, current_time=cut_time, device=device)
     env = Environment(graph=graph, state=cut_state, n=len(cut_state.job_states), action_time=cut_time)
     env.possible_decisions, env.decisionsT = search_possible_decisions(env=env, device=device)
@@ -787,7 +788,7 @@ def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str,
             if analysis_dir is not None:
                 csv_path = os.path.join(
                     analysis_dir,
-                    f"order_{order.id}_acceptation.csv"
+                    f"order_{order.id}_acceptance_analysis.csv"
                 )
 
                 reference_completion_times = {
