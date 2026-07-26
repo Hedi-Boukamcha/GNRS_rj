@@ -14,13 +14,17 @@
 # NOTE : verifie que --account est valide sur Nibi (les allocations
 # par defaut def-xxx/rrg-xxx sont normalement valables sur tous les
 # clusters nationaux, mais confirme avec `sacctmgr show associations
-# user=$USER` une fois connecte). Verifie aussi le type de GPU
-# disponible avec `sinfo -o "%N %G"` si tu veux cibler un modele
-# precis (ex: --gpus-per-node=h100:1).
+# user=$USER` une fois connecte).
+#
+# Contrairement a Narval, Nibi exige de preciser le TYPE de GPU (pas
+# juste --gpus-per-node=1). Types disponibles sur Nibi : h100,
+# nvidia_h100_80gb_hbm3_4g.40gb, nvidia_h100_80gb_hbm3_3g.40gb,
+# nvidia_h100_80gb_hbm3_2g.20gb, nvidia_h100_80gb_hbm3_1g.10gb,
+# mi300a, a100, a5000, t4. On demande un h100 complet par defaut.
 # ============================================================
 #SBATCH --account=def-adhaj
 #SBATCH --job-name=gnrs-acceptation
-#SBATCH --gpus-per-node=1
+#SBATCH --gpus-per-node=h100:1
 #SBATCH --cpus-per-task=6
 #SBATCH --mem=32G
 #SBATCH --time=02:00:00
