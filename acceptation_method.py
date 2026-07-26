@@ -776,14 +776,9 @@ def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str,
                 all_weights[id(job)] = int(getattr(job, "cost", 1))
 
         # Gantt avant le cut
-        
-        
-        
-        #gnn_gantt(f"data/gantts/test/same_costs/before_cut_{order.id}.png", env.state, f"before cut {order.id}", cut_times=[cut_time])
-        gnn_gantt(f"data/gantts/test/different_costs/before_cut_{order.id}.png", env.state, f"before cut {order.id}", cut_times=[cut_time])
-        #gnn_gantt(f"data/gantts/test/different_near_costs/before_cut_{order.id}.png", env.state, f"before cut {order.id}", cut_times=[cut_time])
-        #gnn_gantt(f"data/gantts/test/E_high_N_low_ddLow/before_cut_{order.id}.png", env.state, f"before cut {order.id}", cut_times=[cut_time])
-        #gnn_gantt(f"data/gantts/test/E_high_N_high_ddLow/before_cut_{order.id}.png", env.state, f"before cut {order.id}", cut_times=[cut_time])
+        if gantt_dir is not None:
+            before_cut_path = os.path.join(gantt_dir, f"before_cut_{order.id}.png")
+            gnn_gantt(before_cut_path, env.state, f"before cut {order.id}", cut_times=[cut_time])
 
         print(f"\n=== Order {order.id} | cut_time={cut_time} | {len(new_jobs)} nouveaux jobs ===")
 

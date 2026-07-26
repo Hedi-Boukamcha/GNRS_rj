@@ -514,7 +514,7 @@ class State:
                         self.check_location(j.location, POS_STATION), # 11. Is the job on the stations?
                         is_pos,                                       # 12. Is the job on the positionner?
                         float(j.job.release_date),                    # 13. Release date
-                        cost])                                    # 14. Tardiness weight / cost
+                        cost])                                        # 14. Tardiness weight / cost
         graph["job"].x = torch.tensor(job_features, dtype=torch.float)
 
         # II. create station features
