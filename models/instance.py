@@ -18,7 +18,7 @@ class Operation:
         return f"{{'type':{self.type}, 'processing_time':{self.processing_time}}}"
 
 class Job:
-    def __init__(self, big: int = 0, due_date: int = 0, release_date: int = 0, pos_time: int = 0, operations: list[Operation] = [], status: int = 0, blocked: int = 0):
+    def __init__(self, big: int = 0, due_date: int = 0, release_date: int = 0, pos_time: int = 0, operations: list[Operation] = [], status: int = 0, blocked: int = 0, cost: int = 0):
         self.operations: list[Operation] = operations
         self.big: int = big
         self.due_date: int = due_date
@@ -26,6 +26,7 @@ class Job:
         self.pos_time: int = pos_time
         self.status: int = status
         self.blocked: int = blocked
+        self.cost: int = cost
 
     
     def __str__(self):
@@ -54,8 +55,8 @@ class Instance:
                 release_date = job_data["release_date"],
                 operations=operations, 
                 status=job_data["status"], 
-                blocked=job_data["blocked"])
-            job.cost = int(job_data.get("cost", 1))
+                blocked=job_data["blocked"],
+                cost=job_data["cost"])
             jobs.append(job)
             n += len(operations)
         return Instance(jobs=jobs, n=n)

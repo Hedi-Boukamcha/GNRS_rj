@@ -49,9 +49,9 @@ class OrderInstance:
                     pos_time     = job_data["pos_time"],
                     operations   = operations,
                     status       = job_data["status"],
-                    blocked      = job_data["blocked"]
+                    blocked      = job_data["blocked"],
+                    cost         = job_data["cost"]
                 )
-                job.cost = int(job_data.get("cost", 1))
                 jobs.append(job)
             orders.append(Order(
                 id       = order_data["id"],

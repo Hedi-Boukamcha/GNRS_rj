@@ -23,29 +23,13 @@ __version__ = "2.0.0"
 __license__ = "MIT"
 
 
-def save_step_gantt(
-    env,
-    gantt_dir: str | None,
-    label: str,
-    step: int,
-    cut_times: list[int] | None = None
-):
+def save_step_gantt(env, gantt_dir: str | None, label: str, step: int, cut_times: list[int] | None = None):
     if gantt_dir is None:
         return
-
     os.makedirs(gantt_dir, exist_ok=True)
+    path = os.path.join(gantt_dir, f"{label}_step_{step:03d}.png")
 
-    path = os.path.join(
-        gantt_dir,
-        f"{label}_step_{step:03d}.png"
-    )
-
-    gnn_gantt(
-        path,
-        env.state,
-        f"{label} | step {step}",
-        cut_times=cut_times or []
-    )
+    gnn_gantt(path, env.state, f"{label} | step {step}", cut_times=cut_times or [])
 
 # Definition de la valeur du retard actuel (de reference)
 def compute_current_schedule_ref(state: State, all_weights: dict) -> tuple[float, int]:
@@ -218,7 +202,7 @@ def print_state_calendars(state: State, title: str = ""):
             f"current_station={safe_station_name(j.current_station)} | "
             f"release={j.job.release_date} | "
             f"due_date={j.job.due_date} | "
-            f"cost={getattr(j.job, 'cost', 1)} | "
+            f"cost={j.job.cost} | "
             f"end={j.end} | "
             f"delay={j.delay}"
         )
@@ -393,7 +377,6 @@ def evaluate_subset(state: State, subset: list[Job], new_jobs: list[Job], cut_ti
     
     if gantt_dir is not None:
         os.makedirs(gantt_dir, exist_ok=True)
-
         s_name = subset_name(subset, new_jobs)
 
         gantt_path = os.path.join(
@@ -450,11 +433,7 @@ def bfs_forward(state: State, new_jobs: list[Job], cut_time: int, agent: Agent, 
             f"weight={all_weights[id(job)]:.4f}"
         )
 
-    cost_ref, cmax_ref = compute_current_schedule_ref(
-        state,
-        all_weights
-    )
-
+    cost_ref, cmax_ref = compute_current_schedule_ref(state, all_weights)
     cost_max = cost_ref * (1 + delta_ratio)
 
     print(f"\n  cost_ref={cost_ref:.4f} | cost_max={cost_max:.4f}")
@@ -763,7 +742,7 @@ def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str,
     first_order = order_instance.orders[0]
     for job in first_order.jobs:
         #all_weights[id(job)] = random.uniform(EXISTING_COST_MIN, EXISTING_COST_MAX)
-        all_weights[id(job)] = int(getattr(job, "cost", 1))
+        all_weights[id(job)] = job.cost
 
     # 2. Pour chaque order suivant → Master Problem
     for order in order_instance.orders[1:]:
@@ -773,7 +752,7 @@ def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str,
         for job in new_jobs:
             if id(job) not in all_weights:
                 #all_weights[id(job)] = random.uniform(NEW_COST_MIN, NEW_COST_MAX)
-                all_weights[id(job)] = int(getattr(job, "cost", 1))
+                all_weights[id(job)] = job.cost
 
         # Gantt avant le cut
         if gantt_dir is not None:
@@ -911,7 +890,7 @@ def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str,
             )
             print(f"  📄 Tableau analyse sauvegardé : {csv_path}")
 
-        print(f"Order {order.id} schedulé | Cmax={env.state.cmax} | Tardiness={sum(j.delay for j in env.state.job_states)}")
+        print(f"Order {order.id} schedulé | Cmax={env.state.cmax} | Tardiness={sum(j.delay * j.job.cost for j in env.state.job_states)}")
     global_end_time = time.perf_counter()
     total_acceptance_time = global_end_time - global_start_time
 

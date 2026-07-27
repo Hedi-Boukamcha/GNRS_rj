@@ -156,7 +156,7 @@ class State:
         self.ub_cmax     = max(current_time, 1)
         self.ub_delay    = 1
         for js in self.job_states:  
-            w = int(getattr(js.job, "cost", 1))
+            w = js.job.cost
             if js.is_done(): 
                 js.delay          = max(0, js.end - js.job.due_date) 
                 self.total_delay += w * js.delay
@@ -171,10 +171,10 @@ class State:
                 self.total_delay += w * estimated_delay
 
         # 2. Maximal remaining delays and production time (makespan)
-        sorted_jobs: list[JobState] = sorted(self.job_states, key=lambda j: j.job.due_date)
+        sorted_jobs: list[JobState] = sorted(self.job_states, key=lambda j: j.job.due_date / j.job.cost)
         for js in reversed(sorted_jobs):
             if not js.is_done():
-                w = int(getattr(js.job, "cost", 1))
+                w = js.job.cost
                 has_one_done: bool = False
                 for o in js.operation_states:
                     if o.remaining_time > 0:
@@ -477,7 +477,7 @@ class State:
                     job_robot = j.graph_id
                 machine_1_is_first: float = float(j.operation_states[0].operation.type == MACHINE_1)
                 is_pos: float             = float(j.id == last_job_in_pos)
-                remaining_time_dd: int    = float(current_time - j.job.due_date)
+                remaining_time_dd: float  = float(current_time - j.job.due_date)
                 remaining_time_m1: float  = 0.0
                 remaining_time_m2: float  = 0.0
                 for idx, o in enumerate(j.operation_states):
@@ -498,7 +498,7 @@ class State:
                         if idx == len(j.operation_states) -1:
                             nb_last_op_m2  += 1
 
-                cost = float(getattr(j.job, "cost", 1)) / max_cost
+                cost = float(j.job.cost) / max_cost
                 job_features.append([
                         float(j.job.big),                             # 0. Is it a big job that can only use station 2?
                         remaining_time_m1,                            # 1. remaining time in machine 1
@@ -513,7 +513,7 @@ class State:
                         m2,                                           # 10. Hold by robot at machine 2?
                         self.check_location(j.location, POS_STATION), # 11. Is the job on the stations?
                         is_pos,                                       # 12. Is the job on the positionner?
-                        float(j.job.release_date),                    # 13. Release date
+                        float(current_time - j.job.release_date),     # 13. Release date
                         cost])                                        # 14. Tardiness weight / cost
         graph["job"].x = torch.tensor(job_features, dtype=torch.float)
 
@@ -716,7 +716,7 @@ class JobState:
         self.operation_states: list[OperationState] = []
         if build_operations:
             self.operation_states: list[OperationState] = [OperationState(id=id, job=self, operation=op) for id, op in enumerate(job.operations)] if job else []
-
+            
     def get_last_executed_operation(self) -> 'OperationState':
         for o in reversed(self.operation_states):
             if o.remaining_time == 0 or o.status == IN_EXECUTION:

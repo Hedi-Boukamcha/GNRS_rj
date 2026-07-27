@@ -14,7 +14,7 @@ from gantt_builder.gnn_gantt import gnn_gantt
 
 def compute_weighted_tardiness(final_state):
     return sum(
-        int(getattr(j.job, "cost", 1)) * j.delay
+        float(getattr(j.job, "cost", 1)) * j.delay
         for j in final_state.job_states
     )
 
