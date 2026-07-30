@@ -1,10 +1,10 @@
 {
-    "a": 0,
+    "a": 50,
     "scenario": "portion_of_7_3",
-    "ub_cmax_order_1": 291,
-    "ub_cmax_order_1_2": 388,
+    "ub_cmax_order_1": 169,
+    "ub_cmax_order_1_2": 174,
     "arrival_variant": "early",
-    "arrival_cut_time": 19,
+    "arrival_cut_time": 35,
     "orders": [
         {
             "id": 1,
@@ -15,83 +15,64 @@
                     "pos_time": 5,
                     "status": 0,
                     "blocked": 0,
-                    "cost": 0.8646,
+                    "cost": 0.9877,
                     "operations": [
                         {
                             "type": 1,
-                            "processing_time": 29
-                        },
-                        {
-                            "type": 0,
-                            "processing_time": 39
-                        }
-                    ],
-                    "release_date": 5,
-                    "due_date": 71
-                },
-                {
-                    "big": 1,
-                    "pos_time": 5,
-                    "status": 0,
-                    "blocked": 0,
-                    "cost": 0.972,
-                    "operations": [
-                        {
-                            "type": 0,
-                            "processing_time": 37
-                        },
-                        {
-                            "type": 1,
-                            "processing_time": 25
-                        }
-                    ],
-                    "release_date": 17,
-                    "due_date": 54
-                },
-                {
-                    "big": 0,
-                    "pos_time": 5,
-                    "status": 0,
-                    "blocked": 0,
-                    "cost": 0.8181,
-                    "operations": [
-                        {
-                            "type": 1,
-                            "processing_time": 48
+                            "processing_time": 13
                         },
                         {
                             "type": 0,
                             "processing_time": 15
                         }
                     ],
-                    "release_date": 26,
-                    "due_date": 72
-                }
-            ]
-        },
-        {
-            "id": 2,
-            "cut_time": 19,
-            "jobs": [
+                    "release_date": 36,
+                    "due_date": 88
+                },
                 {
                     "big": 0,
                     "pos_time": 5,
                     "status": 0,
                     "blocked": 0,
-                    "cost": 0.3595,
+                    "cost": 0.9983,
                     "operations": [
                         {
                             "type": 1,
-                            "processing_time": 46
+                            "processing_time": 32
+                        },
+                        {
+                            "type": 0,
+                            "processing_time": 25
                         }
                     ],
-                    "release_date": 67,
-                    "due_date": 99
+                    "release_date": 26,
+                    "due_date": 107
+                }
+            ]
+        },
+        {
+            "id": 2,
+            "cut_time": 35,
+            "jobs": [
+                {
+                    "big": 1,
+                    "pos_time": 5,
+                    "status": 0,
+                    "blocked": 0,
+                    "cost": 0.3198,
+                    "operations": [
+                        {
+                            "type": 0,
+                            "processing_time": 22
+                        }
+                    ],
+                    "release_date": 71,
+                    "due_date": 111
                 }
             ]
         }
     ],
-    "total_jobs": 4,
-    "nb_existing_jobs": 3,
+    "total_jobs": 3,
+    "nb_existing_jobs": 2,
     "nb_new_jobs": 1
 }

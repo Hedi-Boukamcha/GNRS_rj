@@ -40,6 +40,13 @@ DONE: int = 3
 INSTANCES_SIZES: list[str] = [("s", 3, 5), ("m", 7, 10), ("l", 15, 20), ("xl", 30, 50)]
 NB_TRAIN: int              = 150
 
+# controlled_orders_ub dataset (UB-based order-acceptance instances, also usable to train the base GNN
+# scheduling policy by merging all orders' jobs into a single accept-everything instance)
+CONTROLLED_UB_SCENARIOS: list[str] = ["same_costs", "portion_of_3_7", "portion_of_7_3"]
+CONTROLLED_UB_TIERS: list[str]     = ["early", "middle", "late"]
+CONTROLLED_UB_NB_TRAIN: int        = 30
+CONTROLLED_UB_NB_TEST: int         = 20
+
 # Solving stage configuration
 RETRIES: int = 10
 
@@ -85,7 +92,11 @@ COMPLEXITY_RATE     = 6000      # 6000    # curriculum learning rate: nb episode
 MAX_GRAD_NORM       = 30.0    # max norm for gradient clipping 
 LR_PATIENCE         = 800     # patience for the learning rate scheduler (in number of episodes)
 LR_REDUCE_RATE      = 3000     # 3000    # threshold for the learning rate scheduler
-REWARD_SCALE        = 1       # scale factor for the reward
+REWARD_SCALE        = 1000    # scale factor for the reward (raised after normalizing the reward by
+                               # the instance's own UB in gnn_solver[_costs].reward(): the reward is now
+                               # a small fraction of the UB (~1e-2/1e-1) instead of a raw cmax/delay delta
+                               # in the hundreds/thousands, so this compensates for the overall magnitude
+                               # drop -- retune by watching the new loss.png, this is a rough starting point
 BETA                = 35      # beta parameter for the Huber loss function
 TRADE_OFF           = 0.85    # trade-off between the current-value-based reward and the lower-bound-based reward
 VALIDATE_RATE       = 200      # 200     # nb episodes before validating the model

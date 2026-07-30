@@ -1,10 +1,10 @@
 {
-    "a": 80,
+    "a": 100,
     "scenario": "portion_of_3_7",
-    "ub_cmax_order_1": 159,
-    "ub_cmax_order_1_2": 367,
+    "ub_cmax_order_1": 85,
+    "ub_cmax_order_1_2": 280,
     "arrival_variant": "late",
-    "arrival_cut_time": 134,
+    "arrival_cut_time": 61,
     "orders": [
         {
             "id": 1,
@@ -15,60 +15,75 @@
                     "pos_time": 5,
                     "status": 0,
                     "blocked": 0,
-                    "cost": 0.9057,
+                    "cost": 0.9178,
                     "operations": [
-                        {
-                            "type": 0,
-                            "processing_time": 60
-                        },
                         {
                             "type": 1,
                             "processing_time": 44
                         }
                     ],
                     "release_date": 31,
-                    "due_date": 51
+                    "due_date": 85
                 }
             ]
         },
         {
             "id": 2,
-            "cut_time": 134,
+            "cut_time": 61,
             "jobs": [
                 {
                     "big": 0,
                     "pos_time": 5,
                     "status": 0,
                     "blocked": 0,
-                    "cost": 0.1128,
+                    "cost": 0.3283,
                     "operations": [
                         {
                             "type": 0,
                             "processing_time": 14
                         }
                     ],
-                    "release_date": 177,
-                    "due_date": 184
+                    "release_date": 104,
+                    "due_date": 136
                 },
                 {
                     "big": 0,
                     "pos_time": 5,
                     "status": 0,
                     "blocked": 0,
-                    "cost": 0.2484,
+                    "cost": 0.2024,
                     "operations": [
                         {
                             "type": 1,
                             "processing_time": 14
                         }
                     ],
-                    "release_date": 183,
-                    "due_date": 184
+                    "release_date": 110,
+                    "due_date": 134
+                },
+                {
+                    "big": 0,
+                    "pos_time": 5,
+                    "status": 0,
+                    "blocked": 0,
+                    "cost": 0.2,
+                    "operations": [
+                        {
+                            "type": 0,
+                            "processing_time": 52
+                        },
+                        {
+                            "type": 1,
+                            "processing_time": 37
+                        }
+                    ],
+                    "release_date": 111,
+                    "due_date": 224
                 }
             ]
         }
     ],
-    "total_jobs": 3,
+    "total_jobs": 4,
     "nb_existing_jobs": 1,
-    "nb_new_jobs": 2
+    "nb_new_jobs": 3
 }

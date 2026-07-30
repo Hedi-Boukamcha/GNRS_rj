@@ -30,6 +30,14 @@ class OrderInstance:
         self.a       : int         = a
         self.nb_jobs : int         = sum(len(o.jobs) for o in orders)
 
+    def to_combined_instance(self) -> Instance:
+        """Merge every order's jobs (order 1's existing jobs + order 2's new jobs, already carrying
+        absolute release/due dates) into one Instance, i.e. the accept-everything schedule used to
+        train the base GNN scheduling policy on controlled_orders_ub instances."""
+        jobs = [j for o in self.orders for j in o.jobs]
+        n    = sum(o.n for o in self.orders)
+        return Instance(jobs=jobs, n=n)
+
     def __str__(self) -> str:
         return f"{[o.__str__() for o in self.orders]}"
 

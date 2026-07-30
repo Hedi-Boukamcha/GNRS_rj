@@ -1,10 +1,10 @@
 {
-    "a": 40,
+    "a": 100,
     "scenario": "portion_of_7_3",
-    "ub_cmax_order_1": 258,
-    "ub_cmax_order_1_2": 317,
+    "ub_cmax_order_1": 213,
+    "ub_cmax_order_1_2": 226,
     "arrival_variant": "early",
-    "arrival_cut_time": 4,
+    "arrival_cut_time": 20,
     "orders": [
         {
             "id": 1,
@@ -15,59 +15,55 @@
                     "pos_time": 5,
                     "status": 0,
                     "blocked": 0,
-                    "cost": 0.9115,
+                    "cost": 0.8244,
                     "operations": [
                         {
-                            "type": 0,
-                            "processing_time": 36
-                        },
-                        {
                             "type": 1,
-                            "processing_time": 42
+                            "processing_time": 55
                         }
                     ],
-                    "release_date": 34,
-                    "due_date": 69
+                    "release_date": 47,
+                    "due_date": 112
                 },
                 {
                     "big": 0,
                     "pos_time": 5,
                     "status": 0,
                     "blocked": 0,
-                    "cost": 0.9745,
+                    "cost": 0.9663,
                     "operations": [
                         {
                             "type": 0,
-                            "processing_time": 35
+                            "processing_time": 39
                         },
                         {
                             "type": 1,
-                            "processing_time": 49
+                            "processing_time": 38
                         }
                     ],
-                    "release_date": 48,
-                    "due_date": 75
+                    "release_date": 22,
+                    "due_date": 123
                 }
             ]
         },
         {
             "id": 2,
-            "cut_time": 4,
+            "cut_time": 20,
             "jobs": [
                 {
                     "big": 1,
                     "pos_time": 5,
                     "status": 0,
                     "blocked": 0,
-                    "cost": 0.235,
+                    "cost": 0.1761,
                     "operations": [
                         {
                             "type": 0,
-                            "processing_time": 41
+                            "processing_time": 15
                         }
                     ],
-                    "release_date": 34,
-                    "due_date": 104
+                    "release_date": 66,
+                    "due_date": 99
                 }
             ]
         }

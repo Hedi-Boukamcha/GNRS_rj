@@ -11,31 +11,11 @@ from generate_controlled_order import (
     save_json,
 )
 
-# ======================================================
-# CONTROLLED ORDERS GENERATOR - UB(cmax) VERSION
-# Meme convention que instance_generator_with_costs.py : 4 tailles
-# (s, m, l, xl, via INSTANCES_SIZES), chacune avec nb_train instances
-# train et nb_test instances test. Pour chaque taille/instance, 3
-# scenarios de couts (same_costs, portion_of_3_7, portion_of_7_3) et,
-# pour chaque scenario, 3 variantes de cut_time (early, middle, late).
-#
-# Chaque instance est un couple d'orders (E = Order 1, N = Order 2) dont :
-# - cut_time est place par rapport a UB(cmaxE), la vraie borne superieure
-#   du Cmax de E seul ;
-# - les due dates de E et N sont bornees par UB(cmaxE) et UB(cmaxE+N)
-#   respectivement (memes formules que State.compute_obj_values_and_upper_bounds
-#   dans models/state.py).
-# ======================================================
 __author__  = "Hedi Boukamcha"
 __email__   = "hedi.boukamcha.1@ulaval.ca"
 __version__ = "2.0.0"
 __license__ = "MIT"
 
-
-# Ratio E / (E+N) pour chaque scenario, + bornes de couts (des nombres
-# decimaux, PAS des poids entiers : same_costs=1 partout, les deux autres
-# tirent des couts decimaux -> voir le fix int()->float() dans models/order.py
-# et acceptation_method.py, sinon ces couts <1 seraient tronques a 0 au chargement).
 SCENARIOS_UB = {
     "same_costs": {
         "e_ratio": 0.5,
@@ -55,106 +35,57 @@ SCENARIOS_UB = {
 }
 
 CUT_TIME_TIERS = {
-    "early": lambda ub: randint_interval(1, int(ub / 3)),
-    "middle": lambda ub: randint_interval(int(ub / 3), int(ub / 2)),
-    "late": lambda ub: randint_interval(int(ub / 2), int(ub) - 1),
+    "early": lambda ub: randint_interval(0, int(ub / 4)),
+    "middle": lambda ub: randint_interval(int(ub / 4), int(2 * ub / 4)),
+    "late": lambda ub: randint_interval(int(2 * ub / 4), int(3 * ub / 4)),
 }
 
-
-def _sum_worst_case_time(jobs: list[dict], start_time: int) -> int:
-    """
-    Calcul commun aux deux fonctions UB ci-dessous : reproduit exactement la
-    partie "2. Maximal remaining delays and production time (makespan)" de
-    State.compute_obj_values_and_upper_bounds (models/state.py), pour une
-    liste de jobs dont AUCUNE operation n'est encore executee (on est en
-    train de generer l'instance, rien n'a encore ete schedule) :
-      - pour chaque job, pour chaque operation :
-          + 2*M (deplacements robot) + processing_time
-          + pos_time + M en plus si l'operation est de type MACHINE_1
-      - + 2*L par job (chargement ET dechargement, puisque "has_one_done"
-        est toujours False avant toute execution)
-      - le tout part de start_time (deja calcule par l'appelant, voir
-        compute_ub_cmax_e / compute_ub_cmax_e_n : c'est le premier instant ou
-        TOUS les jobs de la liste sont a la fois "current" et disponibles,
-        i.e. leur relative_release est passe).
-
-    Dans state.py, cette somme est accumulee en parcourant les jobs tries par
-    due_date/cost (pour aussi calculer ub_delay au passage), mais le total
-    final ne depend pas de cet ordre : c'est une simple somme par job.
-    Contrairement a state.py (ou current_time est deja >= relative_release de
-    tous les jobs actifs, puisqu'un job non encore libere n'est pas propose
-    au GNN), ici on genere les jobs AVANT toute execution : rien ne garantit
-    que r_j <= start_time, d'ou le calcul de start_time par l'appelant.
-    """
-    ub_cmax = max(start_time, 1)
+def compute_execution_load(jobs: list[dict]) -> int:
+    """Execute(jobs): temps d'execution sequentiel pire cas si tous les jobs
+    s'enchainaient sans attente (somme des ops + transitions), sans offset de depart."""
+    load = 0
     for job in jobs:
         for op in job["operations"]:
-            ub_cmax += 2 * M + op["processing_time"]
+            load += 2 * M + op["processing_time"]
             if op["type"] == MACHINE_1:
-                ub_cmax += job["pos_time"] + M
-        ub_cmax += 2 * L  # aucune operation "done" au moment de la generation
-    return ub_cmax
+                load += job["pos_time"] + M
+        load += 2 * L
+    return load
 
 
-def compute_ub_cmax_e(existing_jobs: list[dict], current_time: int = 0) -> int:
-    """
-    UB(cmaxE) : vraie borne superieure du Cmax de E (Order 1) seul.
-    Sert a placer cut_time et a borner la due_date de E.
-
-    Tient compte de r_j (relative_release, absolu ici puisque E demarre a
-    base_time=0) : un job ne peut pas commencer avant son r_j, donc le calcul
-    ne peut pas partir plus tot que le plus tardif des r_j du groupe (borne
-    valide : a partir de cet instant, tous les jobs sont forcement
-    disponibles, et le reste du travail peut etre serialise apres).
-    """
-    max_release = max((job["relative_release"] for job in existing_jobs), default=0)
-    start_time = max(current_time, max_release)
-    return _sum_worst_case_time(existing_jobs, start_time)
+def estimated_ub_cmax(jobs: list[dict], start_time: int) -> int:
+    return max(start_time, 1) + compute_execution_load(jobs)
 
 
-def compute_ub_cmax_e_n(existing_jobs: list[dict], new_jobs: list[dict], current_time: int) -> int:
-    """
-    UB(cmaxE+N) : vraie borne superieure du Cmax du systeme complet, E (pas
-    encore fini) + N (a son arrivee), calculee en combinant les DEUX vraies
-    listes de jobs (pas un simple compte) -> c'est ce qui differencie E de N.
-    Sert a borner la due_date de N.
+def compute_ub_cmax_e(existing_jobs: list[dict]) -> int:
+    """UBe = max(rj_e) + Execute(E)"""
+    rj_e = max((job["relative_release"] for job in existing_jobs), default=0)
+    return rj_e + compute_execution_load(existing_jobs)
 
-    Tient compte de r_j des DEUX groupes : existing_jobs["relative_release"]
-    est absolu (base_time=0), new_jobs["relative_release"] est relatif a
-    cut_time (=current_time). On les convertit en releases absolues pour
-    trouver le plus tardif r_j du groupe combine (meme logique que
-    compute_ub_cmax_e) : c'est souvent un job N qui arrive tard apres
-    cut_time qui repousse ce start_time.
-    """
-    max_release_e = max((job["relative_release"] for job in existing_jobs), default=0)
-    max_release_n = max((current_time + job["relative_release"] for job in new_jobs), default=current_time)
-    start_time = max(current_time, max_release_e, max_release_n)
-    return _sum_worst_case_time(existing_jobs + new_jobs, start_time)
+
+def compute_ub_cmax_e_n(new_jobs: list[dict], cut_time: int, ub_cmax_e: int) -> int:
+    """REST = UBe - cutTime si UBe > cutTime, sinon cutTime.
+    UBe+n = max(rj_n, REST) + Execute(N)"""
+    rest = (ub_cmax_e - cut_time) if ub_cmax_e > cut_time else cut_time
+    rj_n = max((cut_time + job["relative_release"] for job in new_jobs), default=cut_time)
+    return max(rj_n, rest) + compute_execution_load(new_jobs)
 
 
 def sample_due_dates_from_ub(jobs: list[dict], min_due_date: float, max_due_date: float, base_time: int) -> list[dict]:
-    """
-    Tire relative_due pour chaque job independamment dans [min_due_date, max_due_date]
-    (bornes ABSOLUES, i.e. par rapport au temps 0 global) :
-      - E (Order 1, base_time=0)        : min=due_date_min, max=UB(cmaxE)/3
-      - N (Order 2, base_time=cut_time) : min=cut_time+due_date_min, max=UB(cmaxE+N)/3
-    base_time est soustrait pour obtenir relative_due, coherent avec
-    convert_relative_jobs_to_absolute qui rajoute base_time plus tard.
-    """
     jobs = copy.deepcopy(jobs)
-    max_due_date = max(min_due_date, max_due_date)  # garde-fou si UB/3 tombe sous min_due_date
     for job in jobs:
-        due_absolute = random.uniform(min_due_date, max_due_date)
+        absolute_release = base_time + job["relative_release"]
+        # plus petite date a laquelle le job peut finir s'il est traite seul :
+        # release + temps de traitement + mouvements necessaires (2*M par op, pos_time+M si MACHINE_1, 2*L)
+        job_min_due = estimated_ub_cmax([job], absolute_release)
+        job_min_due = max(min_due_date, job_min_due)
+        job_max_due = max(job_min_due, max_due_date)  # garde-fou si UB/3 tombe sous job_min_due
+        due_absolute = random.uniform(job_min_due, job_max_due)
         job["relative_due"] = int(round(due_absolute - base_time))
     return jobs
 
 
 def apply_random_costs(jobs: list[dict], cost_min: float, cost_max: float) -> list[dict]:
-    """
-    Comme generate_controlled_order.apply_costs_to_template, mais avec des
-    couts decimaux (random.uniform), puisque les scenarios ici utilisent des
-    couts fractionnaires (ex: [0.05, 0.4]) et non plus des poids entiers.
-    """
     jobs = copy.deepcopy(jobs)
     for job in jobs:
         job["cost"] = round(random.uniform(cost_min, cost_max), 4)
@@ -210,14 +141,6 @@ def generate_one_ub_scenario_instance(
     release_spread_new: int = 50,
     due_date_min: int = 50,
 ) -> dict[str, dict]:
-    """
-    Genere une liste de jobs E (Order 1) / N (Order 2), repartie selon e_ratio
-    (nb_e = round(total_jobs * e_ratio), le reste va a N), et retourne un
-    dict {tier: instance_json} pour les 3 variantes de cut_time (early,
-    middle, late) definies dans CUT_TIME_TIERS. Les 3 variantes partagent les
-    memes jobs E/N (memes operations/couts) ; seul cut_time (et donc les due
-    dates de N, qui en dependent via UB(cmaxE+N)) change.
-    """
     nb_e = max(1, min(total_jobs - 1, round(total_jobs * e_ratio)))
     nb_n = total_jobs - nb_e
 
@@ -228,10 +151,6 @@ def generate_one_ub_scenario_instance(
         max_duration=max_duration,
         pos_time=pos_time,
         release_spread=release_spread_existing,
-        due_slack_min=0,
-        due_slack_max=0,
-        cost_min=1,
-        cost_max=1
     )
     new_jobs = generate_order_template(
         nb_jobs=nb_n,
@@ -239,16 +158,9 @@ def generate_one_ub_scenario_instance(
         min_duration=min_duration,
         max_duration=max_duration,
         pos_time=pos_time,
-        release_spread=release_spread_new,
-        due_slack_min=0,
-        due_slack_max=0,
-        cost_min=1,
-        cost_max=1
+        release_spread=release_spread_new, 
     )
-
-    # 1) UB(cmaxE) : vraie borne sup du Cmax de E seul
-    #    -> sert a placer cut_time ET a borner la due_date de E
-    ub_cmax_e = compute_ub_cmax_e(existing_jobs, current_time=0)
+    ub_cmax_e = compute_ub_cmax_e(existing_jobs)
 
     existing_jobs = apply_random_costs(
         existing_jobs,
@@ -261,7 +173,6 @@ def generate_one_ub_scenario_instance(
         new_cost_range[0],
         new_cost_range[1]
     )
-
 
     existing_jobs = sample_due_dates_from_ub(
         jobs=existing_jobs,
@@ -280,13 +191,10 @@ def generate_one_ub_scenario_instance(
         while cut_time in used_cut_times:
             cut_time = cut_rule(ub_cmax_e)
         used_cut_times.add(cut_time)
-
-        # 2) UB(cmaxE+N) : distingue E et N (deux vraies listes de jobs
-        #    combinees) -> sert a borner la due_date de N
         ub_cmax_e_n = compute_ub_cmax_e_n(
-            existing_jobs,
             new_jobs,
-            current_time=cut_time
+            cut_time=cut_time,
+            ub_cmax_e=ub_cmax_e
         )
 
         new_jobs_with_due_dates = sample_due_dates_from_ub(
@@ -328,13 +236,6 @@ def generate_controlled_orders_ub_sized(
     due_date_min: int = 50,
     seed: int = 1
 ):
-    """
-    Pour chaque taille de INSTANCES_SIZES (s, m, l, xl), genere nb_train
-    instances "train" et nb_test instances "test". Chaque instance est
-    declinee dans les 3 scenarios de SCENARIOS_UB, chacun en 3 variantes de
-    cut_time (early/middle/late) -> fichiers
-    <output_root>/<train|test>/<size>/<scenario>/instance_<i>_<tier>.json
-    """
     random.seed(seed)
 
     for size_name, job_min, job_max in INSTANCES_SIZES:

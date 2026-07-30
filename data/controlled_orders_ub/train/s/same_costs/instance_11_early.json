@@ -1,17 +1,17 @@
 {
-    "a": 10,
+    "a": 30,
     "scenario": "same_costs",
-    "ub_cmax_order_1": 177,
-    "ub_cmax_order_1_2": 260,
+    "ub_cmax_order_1": 180,
+    "ub_cmax_order_1_2": 227,
     "arrival_variant": "early",
-    "arrival_cut_time": 18,
+    "arrival_cut_time": 4,
     "orders": [
         {
             "id": 1,
             "cut_time": 0,
             "jobs": [
                 {
-                    "big": 1,
+                    "big": 0,
                     "pos_time": 5,
                     "status": 0,
                     "blocked": 0,
@@ -19,15 +19,15 @@
                     "operations": [
                         {
                             "type": 1,
-                            "processing_time": 54
+                            "processing_time": 35
                         },
                         {
                             "type": 0,
-                            "processing_time": 45
+                            "processing_time": 21
                         }
                     ],
-                    "release_date": 23,
-                    "due_date": 51
+                    "release_date": 39,
+                    "due_date": 119
                 },
                 {
                     "big": 1,
@@ -37,21 +37,21 @@
                     "cost": 1.0,
                     "operations": [
                         {
-                            "type": 1,
-                            "processing_time": 21
+                            "type": 0,
+                            "processing_time": 43
                         }
                     ],
-                    "release_date": 9,
-                    "due_date": 52
+                    "release_date": 20,
+                    "due_date": 81
                 }
             ]
         },
         {
             "id": 2,
-            "cut_time": 18,
+            "cut_time": 4,
             "jobs": [
                 {
-                    "big": 1,
+                    "big": 0,
                     "pos_time": 5,
                     "status": 0,
                     "blocked": 0,
@@ -59,11 +59,11 @@
                     "operations": [
                         {
                             "type": 1,
-                            "processing_time": 53
+                            "processing_time": 41
                         }
                     ],
-                    "release_date": 43,
-                    "due_date": 82
+                    "release_date": 47,
+                    "due_date": 98
                 }
             ]
         }

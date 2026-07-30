@@ -1,10 +1,10 @@
 {
     "a": 50,
     "scenario": "same_costs",
-    "ub_cmax_order_1": 210,
-    "ub_cmax_order_1_2": 397,
+    "ub_cmax_order_1": 165,
+    "ub_cmax_order_1_2": 319,
     "arrival_variant": "middle",
-    "arrival_cut_time": 103,
+    "arrival_cut_time": 41,
     "orders": [
         {
             "id": 1,
@@ -18,16 +18,16 @@
                     "cost": 1.0,
                     "operations": [
                         {
-                            "type": 1,
-                            "processing_time": 42
+                            "type": 0,
+                            "processing_time": 57
                         },
                         {
-                            "type": 0,
-                            "processing_time": 47
+                            "type": 1,
+                            "processing_time": 15
                         }
                     ],
-                    "release_date": 30,
-                    "due_date": 56
+                    "release_date": 16,
+                    "due_date": 112
                 },
                 {
                     "big": 1,
@@ -38,17 +38,17 @@
                     "operations": [
                         {
                             "type": 1,
-                            "processing_time": 57
+                            "processing_time": 13
                         }
                     ],
-                    "release_date": 10,
-                    "due_date": 57
+                    "release_date": 46,
+                    "due_date": 69
                 }
             ]
         },
         {
             "id": 2,
-            "cut_time": 103,
+            "cut_time": 41,
             "jobs": [
                 {
                     "big": 0,
@@ -58,21 +58,55 @@
                     "cost": 1.0,
                     "operations": [
                         {
-                            "type": 0,
-                            "processing_time": 36
+                            "type": 1,
+                            "processing_time": 17
                         },
                         {
-                            "type": 1,
-                            "processing_time": 18
+                            "type": 0,
+                            "processing_time": 16
                         }
                     ],
-                    "release_date": 139,
-                    "due_date": 153
+                    "release_date": 68,
+                    "due_date": 125
+                },
+                {
+                    "big": 0,
+                    "pos_time": 5,
+                    "status": 0,
+                    "blocked": 0,
+                    "cost": 1.0,
+                    "operations": [
+                        {
+                            "type": 1,
+                            "processing_time": 47
+                        },
+                        {
+                            "type": 0,
+                            "processing_time": 16
+                        }
+                    ],
+                    "release_date": 49,
+                    "due_date": 136
+                },
+                {
+                    "big": 1,
+                    "pos_time": 5,
+                    "status": 0,
+                    "blocked": 0,
+                    "cost": 1.0,
+                    "operations": [
+                        {
+                            "type": 0,
+                            "processing_time": 33
+                        }
+                    ],
+                    "release_date": 65,
+                    "due_date": 116
                 }
             ]
         }
     ],
-    "total_jobs": 3,
+    "total_jobs": 5,
     "nb_existing_jobs": 2,
-    "nb_new_jobs": 1
+    "nb_new_jobs": 3
 }

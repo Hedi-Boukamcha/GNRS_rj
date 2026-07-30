@@ -545,6 +545,293 @@ def bfs_forward(state: State, new_jobs: list[Job], cut_time: int, agent: Agent, 
     return best_subset
 
 
+# Recherche en largeur inverse : part de l'ensemble complet et retire des jobs
+def bfs_backward(state: State, new_jobs: list[Job], cut_time: int, agent: Agent, device: str, all_weights: dict, delta_ratio: float = 0.2, gantt_dir: str | None = None) -> list[Job]:
+    """
+    BFS Backward (inverse de bfs_forward) : part du sous-ensemble complet des
+    new_jobs et retire des jobs un a un, niveau par niveau, jusqu'a trouver un
+    niveau contenant au moins un sous-ensemble faisable (cost_existants <=
+    cost_max). Comme cost_existants croit avec le nombre de nouveaux jobs
+    acceptes (meme hypothese de monotonie que celle utilisee par bfs_forward
+    pour elaguer les sur-ensembles), le premier niveau faisable contient
+    forcement le/les plus grand(s) sous-ensemble(s) faisable(s) : inutile
+    d'explorer les niveaux plus petits. Beaucoup plus rapide que bfs_forward
+    quand la plupart des nouveaux jobs sont habituellement acceptables,
+    puisque bfs_forward doit alors explorer tout le powerset pour y arriver
+    en grandissant depuis les singletons.
+    """
+    nb_existing = len(state.job_states)
+
+    start_time = time.perf_counter()
+
+    n_evaluated = 0
+    n_valid = 0
+    n_pruned = 0
+
+    print("\n  === Weights utilisés (BFS backward) ===")
+
+    print("  Jobs existants:")
+    for j in state.job_states:
+        print(
+            f"    J{j.id + 1} | "
+            f"dd={j.job.due_date} | "
+            f"weight={all_weights[id(j.job)]:.4f}"
+        )
+
+    print("  Nouveaux jobs:")
+    for i, job in enumerate(new_jobs):
+        print(
+            f"    New J{i + 1} | "
+            f"weight={all_weights[id(job)]:.4f}"
+        )
+
+    cost_ref, cmax_ref = compute_current_schedule_ref(state, all_weights)
+    cost_max = cost_ref * (1 + delta_ratio)
+
+    print(f"\n  cost_ref={cost_ref:.4f} | cost_max={cost_max:.4f}")
+
+    def subset_key(subset):
+        return frozenset(id(j) for j in subset)
+
+    visited = set()
+    level = [list(new_jobs)]  # niveau 0 : ensemble complet (tous acceptes)
+
+    best_subset, best_cost, best_cmax = [], cost_ref, cmax_ref
+
+    while level:
+        level_results = []  # (subset, total_cost, cmax) des sous-ensembles faisables de ce niveau
+
+        for subset in level:
+            key = subset_key(subset)
+            if key in visited:
+                continue
+            visited.add(key)
+
+            print(
+                f"\n  → Subset="
+                f"{[f'J{new_jobs.index(j)+1}(dd={j.due_date})' for j in subset]} "
+                f"| size={len(subset)}"
+            )
+            n_evaluated += 1
+            cost_existants, cost_nouveaux, total_cost, cmax = evaluate_subset(
+                state,
+                subset,
+                new_jobs,
+                cut_time,
+                nb_existing,
+                agent,
+                device,
+                all_weights,
+                gantt_dir=gantt_dir
+            )
+            print(
+                f"cost_existants={cost_existants:.4f} | "
+                f"cost_nouveaux={cost_nouveaux:.4f} | "
+                f"total_cost={total_cost:.4f} | "
+                f"cost_max={cost_max:.4f} | "
+                f"cmax={cmax}"
+            )
+            if cost_existants <= cost_max:
+                n_valid += 1
+                print("     ✅ Valide")
+                level_results.append((subset, total_cost, cmax))
+            else:
+                n_pruned += 1
+                print(
+                    f"     ❌ Élagué "
+                    f"(cost_existants={cost_existants:.4f} > cost_max={cost_max:.4f})"
+                )
+
+        if level_results:
+            best_subset, best_cost, best_cmax = min(level_results, key=lambda r: (r[1], r[2]))
+            break
+
+        # Aucun sous-ensemble faisable a ce niveau -> niveau suivant : tous les
+        # sous-ensembles obtenus en retirant exactement 1 job supplementaire
+        next_level = []
+        next_keys = set()
+        for subset in level:
+            for job in subset:
+                child = [j for j in subset if j is not job]
+                child_key = subset_key(child)
+                if child_key not in visited and child_key not in next_keys:
+                    next_keys.add(child_key)
+                    next_level.append(child)
+        level = next_level
+
+    end_time = time.perf_counter()
+    acceptance_time = end_time - start_time
+
+    print("\n  === Statistiques méthode d'acceptation (backward) ===")
+    print(f"  Temps computationnel : {acceptance_time:.4f} secondes")
+    print(f"  Subsets évalués     : {n_evaluated}")
+    print(f"  Subsets valides     : {n_valid}")
+    print(f"  Subsets élagués     : {n_pruned}")
+
+    print("\n  === Résultat BFS backward ===")
+    print(
+        f"  Best subset : "
+        f"{[f'J{new_jobs.index(j)+1}(dd={j.due_date})' for j in best_subset]}"
+    )
+    print(f"  Best size   : {len(best_subset)}")
+    print(f"  Best cost   : {best_cost:.4f}")
+    print(f"  Best cmax   : {best_cmax}")
+
+    return best_subset
+
+
+# Forward et backward tournent ensemble, niveau par niveau, en partageant les
+# sous-ensembles elagues trouves par l'un ou l'autre sens de recherche.
+def bfs_bidirectional(state: State, new_jobs: list[Job], cut_time: int, agent: Agent, device: str, all_weights: dict, delta_ratio: float = 0.2, gantt_dir: str | None = None) -> list[Job]:
+    """
+    Fait avancer bfs_forward (grandit depuis les singletons) et bfs_backward
+    (retrecit depuis l'ensemble complet) EN MEME TEMPS, un niveau a la fois,
+    en partageant un seul ensemble `pruned_keys` de sous-ensembles confirmes
+    infaisables (regle de monotonie : si S est infaisable, tout sur-ensemble
+    de S l'est aussi). Des qu'un cote evalue un sous-ensemble infaisable,
+    l'AUTRE cote en beneficie immediatement au prochain niveau : il saute
+    l'evaluation (couteuse, rollout GNN) de tout candidat qui contient ce
+    sous-ensemble elague, sans avoir a le decouvrir lui-meme.
+
+    Arret :
+      - backward termine des qu'un niveau contient >=1 sous-ensemble faisable
+        (comme bfs_backward seul : c'est alors forcement le plus grand
+        possible) -> reponse exacte immediate, forward est arrete aussi.
+      - si forward trouve un sous-ensemble faisable strictement plus grand
+        que la taille du prochain niveau backward a explorer, backward ne
+        peut plus faire mieux -> on l'arrete plus tot.
+    """
+    nb_existing = len(state.job_states)
+    start_time = time.perf_counter()
+
+    n_evaluated = 0
+    n_pruned = 0
+    n_skipped = 0
+
+    cost_ref, cmax_ref = compute_current_schedule_ref(state, all_weights)
+    cost_max = cost_ref * (1 + delta_ratio)
+    print("\n  === BFS bidirectionnel (forward + backward partages) ===")
+    print(f"  cost_ref={cost_ref:.4f} | cost_max={cost_max:.4f}")
+
+    def subset_key(subset):
+        return frozenset(id(j) for j in subset)
+
+    pruned_keys: set = set()  # partage entre forward et backward
+
+    def contains_pruned(key) -> bool:
+        return any(pk.issubset(key) for pk in pruned_keys)
+
+    def evaluate(subset):
+        nonlocal n_evaluated
+        n_evaluated += 1
+        return evaluate_subset(
+            state, subset, new_jobs, cut_time, nb_existing, agent, device, all_weights, gantt_dir=gantt_dir
+        )
+
+    best_subset, best_cost, best_cmax = [], cost_ref, cmax_ref
+
+    forward_level = [[job] for job in new_jobs]
+    forward_visited = set()
+
+    backward_level = [list(new_jobs)]
+    backward_visited = set()
+
+    while forward_level or backward_level:
+        # ---------- un niveau backward (retrecit) ----------
+        if backward_level:
+            level_results = []
+            next_backward = []
+            next_keys = set()
+            for subset in backward_level:
+                key = subset_key(subset)
+                if key in backward_visited:
+                    continue
+                backward_visited.add(key)
+
+                if contains_pruned(key):
+                    n_skipped += 1
+                else:
+                    cost_existants, _, total_cost, cmax = evaluate(subset)
+                    if cost_existants <= cost_max:
+                        level_results.append((subset, total_cost, cmax))
+                    else:
+                        n_pruned += 1
+                        pruned_keys.add(key)
+
+                # on retrecit meme si ce sous-ensemble est infaisable ou skippe :
+                # un infaisable n'implique rien sur ses propres sous-ensembles
+                for job in subset:
+                    child = [j for j in subset if j is not job]
+                    child_key = subset_key(child)
+                    if child_key not in backward_visited and child_key not in next_keys:
+                        next_keys.add(child_key)
+                        next_backward.append(child)
+
+            if level_results:
+                best_subset, best_cost, best_cmax = min(level_results, key=lambda r: (r[1], r[2]))
+                print(f"  ✅ Backward a trouvé un niveau faisable (size={len(best_subset)}) -> arrêt")
+                backward_level, forward_level = [], []
+                break
+
+            backward_level = next_backward
+
+        # ---------- un niveau forward (grandit) ----------
+        if forward_level:
+            next_forward = []
+            for subset in forward_level:
+                key = subset_key(subset)
+                if key in forward_visited:
+                    continue
+                forward_visited.add(key)
+
+                if contains_pruned(key):
+                    n_skipped += 1
+                    continue  # sur-ensemble d'un infaisable connu -> inutile d'étendre
+
+                cost_existants, _, total_cost, cmax = evaluate(subset)
+                if cost_existants <= cost_max:
+                    if len(subset) > len(best_subset) or (
+                        len(subset) == len(best_subset) and (total_cost, cmax) < (best_cost, best_cmax)
+                    ):
+                        best_subset, best_cost, best_cmax = subset, total_cost, cmax
+                    for job in new_jobs:
+                        if job not in subset:
+                            child = subset + [job]
+                            if subset_key(child) not in forward_visited:
+                                next_forward.append(child)
+                else:
+                    n_pruned += 1
+                    pruned_keys.add(key)
+
+            forward_level = next_forward
+
+            # backward ne peut plus battre ce que forward a déjà trouvé
+            if backward_level and len(best_subset) > len(backward_level[0]):
+                print(
+                    f"  ⏭️ Forward a déjà trouvé mieux (size={len(best_subset)}) "
+                    f"que ce que backward peut encore atteindre (size={len(backward_level[0])}) -> arrêt backward"
+                )
+                backward_level = []
+
+    end_time = time.perf_counter()
+    print("\n  === Statistiques méthode d'acceptation (bidirectionnel) ===")
+    print(f"  Temps computationnel : {end_time - start_time:.4f} secondes")
+    print(f"  Subsets évalués     : {n_evaluated}")
+    print(f"  Subsets élagués     : {n_pruned}")
+    print(f"  Subsets skippés     : {n_skipped} (grâce au partage forward/backward)")
+
+    print("\n  === Résultat BFS bidirectionnel ===")
+    print(
+        f"  Best subset : "
+        f"{[f'J{new_jobs.index(j)+1}(dd={j.due_date})' for j in best_subset]}"
+    )
+    print(f"  Best size   : {len(best_subset)}")
+    print(f"  Best cost   : {best_cost:.4f}")
+    print(f"  Best cmax   : {best_cmax}")
+
+    return best_subset
+
+
 def save_acceptation_analysis_csv(
     csv_path: str,
     existing_jobs_final,
@@ -763,6 +1050,7 @@ def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str,
 
         # 3. Master Problem → choisir le meilleur sous-ensemble
         #best_subset = bfs_forward(env.state, new_jobs, cut_time, agent, device, all_weights, delta_ratio)
+        #best_subset = bfs_backward(env.state, new_jobs, cut_time, agent, device, all_weights, delta_ratio)
         subset_gantt_dir = None
 
         if gantt_dir is not None:
@@ -771,7 +1059,7 @@ def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str,
                 f"order_{order.id}_subset_tests"
             )
 
-        best_subset = bfs_forward(
+        best_subset = bfs_bidirectional(
             env.state,
             new_jobs,
             cut_time,
