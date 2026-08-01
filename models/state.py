@@ -162,7 +162,7 @@ class State:
                 self.total_delay += w * js.delay
                 self.ub_delay    += w * js.delay
             else:
-                endJ: int = current_time + L
+                endJ: int = max(current_time, js.job.release_date) + L
                 for o in js.operation_states:
                     if o.remaining_time > 0:
                         endJ += 2*M + o.operation.processing_time 
@@ -175,6 +175,7 @@ class State:
         for js in reversed(sorted_jobs):
             if not js.is_done():
                 w = js.job.cost
+                self.ub_cmax = max(self.ub_cmax, js.job.release_date)
                 has_one_done: bool = False
                 for o in js.operation_states:
                     if o.remaining_time > 0:

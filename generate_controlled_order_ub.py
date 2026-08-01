@@ -71,7 +71,7 @@ def compute_ub_cmax_e_n(new_jobs: list[dict], cut_time: int, ub_cmax_e: int) -> 
     return max(rj_n, rest) + compute_execution_load(new_jobs)
 
 
-def sample_due_dates_from_ub(jobs: list[dict], min_due_date: float, max_due_date: float, base_time: int) -> list[dict]:
+def sample_due_dates_from_ub(jobs: list[dict], min_due_date: float, max_due_date: float, base_time: int, min_slack: float) -> list[dict]:
     jobs = copy.deepcopy(jobs)
     for job in jobs:
         absolute_release = base_time + job["relative_release"]
@@ -79,7 +79,11 @@ def sample_due_dates_from_ub(jobs: list[dict], min_due_date: float, max_due_date
         # release + temps de traitement + mouvements necessaires (2*M par op, pos_time+M si MACHINE_1, 2*L)
         job_min_due = estimated_ub_cmax([job], absolute_release)
         job_min_due = max(min_due_date, job_min_due)
-        job_max_due = max(job_min_due, max_due_date)  # garde-fou si UB/3 tombe sous job_min_due
+        # garde-fou: garantir au moins min_slack de marge, meme quand max_due_date (le budget de la
+        # tier) tombe sous job_min_due -- sinon job_max_due retombait exactement sur job_min_due (marge
+        # nulle), rendant le job en retard des qu'il y a la moindre contention avec d'autres jobs
+        # (observe empiriquement: tier "late" -> 94.5% des jobs "new" avec marge nulle/negative)
+        job_max_due = max(job_min_due + min_slack, max_due_date)
         due_absolute = random.uniform(job_min_due, job_max_due)
         job["relative_due"] = int(round(due_absolute - base_time))
     return jobs
@@ -178,7 +182,8 @@ def generate_one_ub_scenario_instance(
         jobs=existing_jobs,
         min_due_date=due_date_min,
         max_due_date=ub_cmax_e / 3,
-        base_time=0
+        base_time=0,
+        min_slack=due_date_min
     )
 
     a = random.randint(0, 10) * 10
@@ -201,7 +206,8 @@ def generate_one_ub_scenario_instance(
             jobs=new_jobs,
             min_due_date=cut_time + due_date_min,
             max_due_date=ub_cmax_e_n / 3,
-            base_time=cut_time
+            base_time=cut_time,
+            min_slack=due_date_min
         )
 
         instance = build_instance(

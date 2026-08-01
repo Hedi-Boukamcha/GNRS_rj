@@ -76,6 +76,7 @@ class Agent:
         self.custom: bool         = custom
         self.device: str          = device
         self.train: bool          = train
+        self.interactive: bool    = interactive
         self.prefix: str          = "" if self.custom else "basic_"
         if self.custom:
             self.policy_net: CustomQNet = CustomQNet()
@@ -95,12 +96,9 @@ class Agent:
             self.policy_net.train()
             self.target_net.eval()
             self.optimizer       = Adam(list(self.policy_net.parameters()), lr=LR)
-            self.loss: Loss      = Loss(xlabel="Episode", ylabel="Loss", title="Huber Loss (policy network)", color="blue", show=interactive)
-            self.diversity: Loss = Loss(xlabel="Episode", ylabel="Diversity probability", title="Epsilon threshold", color="green", show=interactive)
-            self.s_obj: Loss     = Loss(xlabel="Episode", ylabel="Objective value (cmax + delay)", title="Avg objective value for S instances", color="orange", show=interactive)
-            self.m_obj: Loss     = Loss(xlabel="Episode", ylabel="Objective value (cmax + delay)", title="Avg objective value for M instances", color="orange", show=interactive)
-            self.l_obj: Loss     = Loss(xlabel="Episode", ylabel="Objective value (cmax + delay)", title="Avg objective value for L instances", color="orange", show=interactive)
-            self.xl_obj: Loss    = Loss(xlabel="Episode", ylabel="Objective value (cmax + delay)", title="Avg objective value for XL instances", color="orange", show=interactive)
+            self.loss: Loss         = Loss(xlabel="Episode", ylabel="Loss", title="Huber Loss (policy network)", color="blue", show=interactive)
+            self.diversity: Loss    = Loss(xlabel="Episode", ylabel="Diversity probability", title="Epsilon threshold", color="green", show=interactive)
+            self.obj: dict[str, Loss] = {}  # one curve per (size, scenario) pair, created lazily in add_obj()
         else:
             self.policy_net.eval()
 
@@ -121,25 +119,20 @@ class Agent:
             Q_values: Tensor = self.policy_net(Batch.from_data_list([graph]).to(self.device), decisionsT)
             return Q_values.view(-1)
 
-    def add_obj(self, size: str, obj: int):
-        if size == "s":
-            self.s_obj.update(obj)
-        elif size == "m":
-            self.m_obj.update(obj)
-        elif size == "l":
-            self.l_obj.update(obj)
-        else:
-            self.xl_obj.update(obj)
-        
+    def add_obj(self, size: str, obj: int, scenario: str=None):
+        name: str = f"{size}_obj_{scenario}" if scenario else f"{size}_obj"
+        if name not in self.obj:
+            title: str = f"Avg objective value for {size.upper()} instances" + (f" [{scenario}]" if scenario else "")
+            self.obj[name] = Loss(xlabel="Episode", ylabel="Objective value (cmax + delay)", title=title, color="orange", show=self.interactive)
+        self.obj[name].update(obj)
+
     def save(self):
         print(f"Saving {self.prefix}policy_net and current loss...")
         torch.save(self.policy_net.state_dict(), f"{self.path}{self.prefix}policy_net.pth")
         self.diversity.save(f"{self.path}{self.prefix}epsilon")
         self.loss.save(f"{self.path}{self.prefix}loss")
-        self.l_obj.save(f"{self.path}{self.prefix}l_obj")
-        self.s_obj.save(f"{self.path}{self.prefix}s_obj")
-        self.m_obj.save(f"{self.path}{self.prefix}m_obj")
-        self.xl_obj.save(f"{self.path}{self.prefix}xl_obj")  
+        for name, loss_obj in self.obj.items():
+            loss_obj.save(f"{self.path}{self.prefix}{name}")
 
     def load(self, device: str):
         print(f"Loading {self.prefix}policy_net...")
