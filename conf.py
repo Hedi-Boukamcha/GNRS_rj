@@ -47,19 +47,6 @@ CONTROLLED_UB_TIERS: list[str]     = ["early", "middle", "late"]
 CONTROLLED_UB_NB_TRAIN: int        = 30
 CONTROLLED_UB_NB_TEST: int         = 20
 
-# Per-scenario reward weight for the delay term (see generate_controlled_order_ub.py: SCENARIOS_UB).
-# total_delay/ub_delay are cost-weighted (w = job.cost), and the 3 scenarios draw job costs from very
-# different ranges (same_costs: all jobs ~1.0; portion_of_3_7/7_3: mix of ~0.05-1.0 depending on e_ratio),
-# so the raw delay reward would otherwise be ~2-2.5x smaller for the skewed scenarios than for same_costs
-# even on equally-hard instances. Weight = 1 / (e_ratio * mean(existing_cost_range) + (1-e_ratio) * mean(new_cost_range)),
-# i.e. the inverse of each scenario's expected job cost, so the delay reward is rescaled back to a common
-# ~1.0-average-cost reference (same_costs' own scale).
-CONTROLLED_UB_SCENARIO_WEIGHTS: dict = {
-    "same_costs":     1.0,
-    "portion_of_3_7": 2.3392,
-    "portion_of_7_3": 1.4337,
-}
-
 # Solving stage configuration
 RETRIES: int = 10
 
@@ -105,11 +92,12 @@ COMPLEXITY_RATE     = 6000      # 6000    # curriculum learning rate: nb episode
 MAX_GRAD_NORM       = 30.0    # max norm for gradient clipping 
 LR_PATIENCE         = 800     # patience for the learning rate scheduler (in number of episodes)
 LR_REDUCE_RATE      = 3000     # 3000    # threshold for the learning rate scheduler
-REWARD_SCALE        = 1    # scale factor for the reward (raised after normalizing the reward by
-                               # the instance's own UB in gnn_solver[_costs].reward(): the reward is now
-                               # a small fraction of the UB (~1e-2/1e-1) instead of a raw cmax/delay delta
-                               # in the hundreds/thousands, so this compensates for the overall magnitude
-                               # drop -- retune by watching the new loss.png, this is a rough starting point
+REWARD_SCALE        = 1000    # scale factor for the reward (raised to compensate for normalizing the
+                               # reward by the instance's own UB in gnn_solver[_costs].reward(): the
+                               # reward is now a small fraction of the UB (~1e-2/1e-1) instead of a raw
+                               # cmax/delay delta in the hundreds/thousands, so this compensates for the
+                               # overall magnitude drop -- retune by watching the new loss.png, this is
+                               # a rough starting point
 BETA                = 35      # beta parameter for the Huber loss function
 TRADE_OFF           = 0.85    # trade-off between the current-value-based reward and the lower-bound-based reward
 VALIDATE_RATE       = 200      # 200     # nb episodes before validating the model

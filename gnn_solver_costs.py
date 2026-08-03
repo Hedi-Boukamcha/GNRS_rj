@@ -67,24 +67,23 @@ def search_possible_decisions(env: Environment, device: str) -> list[Decision]:
     decisionsT: Tensor = torch.tensor([[d.job_id_in_graph, d.machine, float(d.parallel), env.init_UB_cmax, env.init_UB_delay, env.ub_cmax, env.ub_delay, env.cmax, env.delay, env.total_jobs, env.rm_jobs, env.m2_parallel, env.action_time] for d in decisions], dtype=torch.float32, device=device)
     return decisions, decisionsT
 
-def reward(env: Environment, device: str, scenario: str=None) -> Tensor:
-    # The delay term is cost-weighted (state.total_delay/ub_delay = sum(job.cost * delay)), and the 3
-    # controlled_orders_ub scenarios draw job costs from very different ranges, so the same schedule
-    # quality yields a much smaller raw delay reward under portion_of_3_7/7_3 than under same_costs.
-    # Rescale only the delay term (cmax is unrelated to job cost) by the scenario's compensating weight.
-    delay_weight: float = CONTROLLED_UB_SCENARIO_WEIGHTS.get(scenario, 1.0) if scenario else 1.0
+def reward(env: Environment, device: str) -> Tensor:
+    # Normalize by the instance's own initial UB so reward magnitude no longer scales with instance
+    # size (raw cmax/delay deltas for xl were ~100x those of s, dominating the shared Q-network's
+    # TD-errors and causing s/m/l to regress every time a larger size entered the curriculum).
+    scale: float       = env.init_UB_cmax + env.init_UB_delay + 1e-6
     delta_cmax: float  = (TRADE_OFF * (env.state.ub_cmax - env.ub_cmax) + env.state.start_time - env.cmax)/(1 + TRADE_OFF)
     delta_delay: float = (TRADE_OFF * (env.state.ub_delay - env.ub_delay) + env.state.total_delay - env.delay)/(1 + TRADE_OFF)
-    return torch.tensor([-REWARD_SCALE * (delta_cmax + delay_weight * delta_delay)], dtype=torch.float32, device=device)
+    return torch.tensor([-REWARD_SCALE * (delta_cmax + delta_delay) / scale], dtype=torch.float32, device=device)
 
 @ray.remote
-def step_as_task(p_idx: int, q_val: float, agent: Agent, last_env: Environment, action_id: int, device: str, clone: bool=False, train: bool=False, pb_size: int=0, scenario: str=None) -> Environment:
-    env: Environment = take_one_step(agent=agent, last_env=last_env, action_id=action_id, device=device, clone=clone, train=train, pb_size=pb_size, scenario=scenario)
+def step_as_task(p_idx: int, q_val: float, agent: Agent, last_env: Environment, action_id: int, device: str, clone: bool=False, train: bool=False, pb_size: int=0) -> Environment:
+    env: Environment = take_one_step(agent=agent, last_env=last_env, action_id=action_id, device=device, clone=clone, train=train, pb_size=pb_size)
     horizon: int = 2
     next: Environment = env
     while horizon > 0 and env.possible_decisions:
         action_id: int = agent.select_next_decision(graph=env.graph, decisionsT=env.decisionsT, greedy=True)
-        next = take_one_step(agent=agent, last_env=next, action_id=action_id, device=device, clone=False, train=train, pb_size=pb_size, scenario=scenario)
+        next = take_one_step(agent=agent, last_env=next, action_id=action_id, device=device, clone=False, train=train, pb_size=pb_size)
         horizon -= 1
     return Candidate(parent_idx=p_idx,
                         action_idx=action_id,
@@ -93,7 +92,7 @@ def step_as_task(p_idx: int, q_val: float, agent: Agent, last_env: Environment, 
                         cmax=next.state.ub_cmax + next.state.cmax,
                         delay=next.state.total_delay + next.state.ub_delay)
 
-def take_one_step(agent: Agent, last_env: Environment, action_id: int, device: str, clone: bool=False, train: bool=False, pb_size: int=0, scenario: str=None) -> Environment:
+def take_one_step(agent: Agent, last_env: Environment, action_id: int, device: str, clone: bool=False, train: bool=False, pb_size: int=0) -> Environment:
     next_env: Environment = last_env.clone() if clone else last_env
     d: Decision           = next_env.possible_decisions[action_id]
     if d.parallel:
@@ -121,7 +120,7 @@ def take_one_step(agent: Agent, last_env: Environment, action_id: int, device: s
     next_possible_decisions, next_decisionT = search_possible_decisions(env=next_env, device=device)
     if train:
         final: bool   = len(next_possible_decisions) == 0
-        _r: Tensor    = reward(env=next_env, device=device, scenario=scenario)
+        _r: Tensor    = reward(env=next_env, device=device)
         agent.memory.push(Transition(graph=next_env.graph, action_id=action_id, possible_actions=next_env.decisionsT, next_graph=next_graph, next_possible_actions=next_decisionT, reward=_r, final=final, nb_actions=len(next_env.possible_decisions), weight=T_WEIGTHS[pb_size]))
     next_env.update(graph=next_graph, possible_decisions=next_possible_decisions, decisionsT=next_decisionT)
     return next_env
@@ -228,7 +227,7 @@ def solve_one_for_training(agent: Agent, path: str, size: str, id: str, device: 
     env.possible_decisions, env.decisionsT = search_possible_decisions(env=env, device=device)
     while env.possible_decisions:
         action_id: int = agent.select_next_decision(graph=env.graph, decisionsT=env.decisionsT, possible_decisions=env.possible_decisions, greedy=greedy, eps_threshold=eps_threshold)
-        env = take_one_step(agent=agent, last_env=env, action_id=action_id, pb_size=size, device=device, train=True, scenario=scenario)
+        env = take_one_step(agent=agent, last_env=env, action_id=action_id, pb_size=size, device=device, train=True)
     obj: int = env.state.total_delay + env.state.cmax
     return obj, (env.init_UB_cmax + env.init_UB_delay)
 
@@ -277,20 +276,22 @@ def train(agent: Agent, path: str, device: str, dataset: str="instances_cost"):
         computing_time = time.time() - start_time
         agent.diversity.update(eps_threshold)
         if episode == 1 or episode % VALIDATE_RATE == 0:
-            # rotate through one (scenario, tier) combo per checkpoint so validation cost stays flat
-            # (same nb of instances per size as before) while still covering all 9 combos over time
-            nb_combos: int    = len(CONTROLLED_UB_SCENARIOS) * len(CONTROLLED_UB_TIERS) if is_ub else 1
-            combo_idx: int    = (episode // VALIDATE_RATE) % nb_combos
-            v_scenario: str   = CONTROLLED_UB_SCENARIOS[combo_idx // len(CONTROLLED_UB_TIERS)] if is_ub else None
-            v_tier: str       = CONTROLLED_UB_TIERS[combo_idx % len(CONTROLLED_UB_TIERS)] if is_ub else None
+            # rotate through one scenario per checkpoint (keeps validation cost bounded), but average
+            # over all 3 cut_time tiers within that scenario so consecutive points of a given scenario's
+            # curve are directly comparable (a single tier's difficulty no longer swings the curve
+            # point to point -- see the "late" tier near-zero-slack issue diagnosed earlier)
+            nb_scenarios: int  = len(CONTROLLED_UB_SCENARIOS) if is_ub else 1
+            v_scenario: str    = CONTROLLED_UB_SCENARIOS[(episode // VALIDATE_RATE) % nb_scenarios] if is_ub else None
+            v_tiers: list      = CONTROLLED_UB_TIERS if is_ub else [None]
             for vs in sizes[:complexity_limit]:
-                print(f"Validating size {vs}..." + (f" ({v_scenario}/{v_tier})" if is_ub else ""))
+                print(f"Validating size {vs}..." + (f" ({v_scenario})" if is_ub else ""))
                 val_obj = 0
-                for id in range(1, nb_val_ids + 1):
-                    v_id: str = str(id)
-                    vo,_ = solve_one_for_training(agent=agent, path=path, size=vs, id=v_id, device=device, dataset=dataset, scenario=v_scenario, tier=v_tier, greedy=True, eps_threshold=0.0)
-                    val_obj += vo
-                val_obj /= float(nb_val_ids)
+                for v_tier in v_tiers:
+                    for id in range(1, nb_val_ids + 1):
+                        v_id: str = str(id)
+                        vo,_ = solve_one_for_training(agent=agent, path=path, size=vs, id=v_id, device=device, dataset=dataset, scenario=v_scenario, tier=v_tier, greedy=True, eps_threshold=0.0)
+                        val_obj += vo
+                val_obj /= float(nb_val_ids * len(v_tiers))
                 agent.add_obj(size=vs, obj=val_obj, scenario=v_scenario)
                 print(f"Valdation of size {vs} = AVG = {val_obj}...")
         if episode % COMPLEXITY_RATE == 0 and complexity_limit<len(sizes):
