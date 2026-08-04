@@ -2,7 +2,7 @@ import random
 from models.instance import Instance
 from models.state import State
 from simulators.gnn_simulator import simulate, build_state_from_cut
-from gnn_solver import search_possible_decisions as spd
+from _old.gnn_solver import search_possible_decisions as spd
 from models.agent import Agent
 from conf import *
 from torch_geometric.data import HeteroData
@@ -22,7 +22,7 @@ graph = state.to_hyper_graph(last_job_in_pos=-1, current_time=0, device="cpu")
 from models.environment import Environment
 env = Environment(graph=graph, state=state, n=len(instance.jobs))
 
-from gnn_solver import search_possible_decisions as spd
+from _old.gnn_solver import search_possible_decisions as spd
 env.possible_decisions, env.decisionsT = spd(env=env, device="cpu")
 
 # Avancer de quelques décisions
@@ -31,7 +31,7 @@ for _ in range(nb_steps):
     if not env.possible_decisions:
         break
     action_id = random.randint(0, len(env.possible_decisions) - 1)
-    from gnn_solver import take_one_step
+    from _old.gnn_solver import take_one_step
     env = take_one_step(agent=agent, last_env=env, action_id=action_id, device="cpu")
 
 print(f"\n=== Etat après {nb_steps} décisions ===")

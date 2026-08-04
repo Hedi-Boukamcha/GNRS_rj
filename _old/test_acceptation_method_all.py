@@ -5,7 +5,7 @@ import traceback
 
 from models.order import OrderInstance
 from models.agent import Agent
-from acceptation_method import acceptation_method
+from master_problem.acceptation_method import acceptation_method
 from conf import *
 
 

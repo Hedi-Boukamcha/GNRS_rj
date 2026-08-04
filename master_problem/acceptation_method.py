@@ -1,3 +1,4 @@
+# master_problem/acceptation_method.py
 import csv
 import os
 import random
@@ -9,7 +10,7 @@ from models.instance import Job
 from models.agent import Agent
 from simulators.gnn_simulator import build_state_from_cut, display_cut_snapshot, validate_cut_state
 from models.environment import Environment
-from gnn_solver_costs import search_possible_decisions, take_one_step
+from gnn_solver import search_possible_decisions, take_one_step
 from conf import *
 import time
 
@@ -261,7 +262,7 @@ def _greedy_rollout(cut_state: State, start_time: int, agent: Agent, device: str
     Retourne l'environnement final, ou None si aucune séquence faisable.
     """
     cut_state.compute_obj_values_and_upper_bounds(unloading_time=0, current_time=start_time)
-    graph = cut_state.to_hyper_graph_costs(last_job_in_pos=-1, current_time=start_time, device=device)
+    graph = cut_state.to_hyper_graph(last_job_in_pos=-1, current_time=start_time, device=device)
     env = Environment(graph=graph, state=cut_state, n=len(cut_state.job_states), action_time=start_time)
     env.possible_decisions, env.decisionsT = search_possible_decisions(env=env, device=device)
     while env.possible_decisions:
@@ -945,7 +946,7 @@ def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str,
     instance    = first_order.to_instance()
     state       = State(instance, M, L, NB_STATIONS, BIG_STATION, [], automatic_build=True)
     state.compute_obj_values_and_upper_bounds(unloading_time=0, current_time=0)
-    graph       = state.to_hyper_graph_costs(last_job_in_pos=-1, current_time=0, device=device)
+    graph       = state.to_hyper_graph(last_job_in_pos=-1, current_time=0, device=device)
     env         = Environment(graph=graph, state=state, n=len(instance.jobs))
     env.possible_decisions, env.decisionsT = search_possible_decisions(env=env, device=device)
     all_weights = {}

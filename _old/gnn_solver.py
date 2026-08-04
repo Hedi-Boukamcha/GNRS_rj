@@ -22,9 +22,8 @@ from ray import ObjectRef
 from models.instance import Instance
 from simulators.gnn_simulator import *
 from utils.common import *
-from conf import INSTANCES_SIZES, CONTROLLED_UB_SCENARIOS, CONTROLLED_UB_TIERS, CONTROLLED_UB_NB_TRAIN, CONTROLLED_UB_NB_TEST
+from conf import INSTANCES_SIZES
 from models.state import State
-from models.order import OrderInstance
 from utils.common import to_bool
 from heuristic.local_search import ls as LS
 from models.agent import Agent
@@ -68,13 +67,9 @@ def search_possible_decisions(env: Environment, device: str) -> list[Decision]:
     return decisions, decisionsT
 
 def reward(env: Environment, device: str) -> Tensor:
-    # Normalize by the instance's own initial UB so reward magnitude no longer scales with instance
-    # size (raw cmax/delay deltas for xl were ~100x those of s, dominating the shared Q-network's
-    # TD-errors and causing s/m/l to regress every time a larger size entered the curriculum).
-    scale: float       = env.init_UB_cmax + env.init_UB_delay + 1e-6
     delta_cmax: float  = (TRADE_OFF * (env.state.ub_cmax - env.ub_cmax) + env.state.start_time - env.cmax)/(1 + TRADE_OFF)
     delta_delay: float = (TRADE_OFF * (env.state.ub_delay - env.ub_delay) + env.state.total_delay - env.delay)/(1 + TRADE_OFF)
-    return torch.tensor([-REWARD_SCALE * (delta_cmax + delta_delay) / scale], dtype=torch.float32, device=device)
+    return torch.tensor([-REWARD_SCALE * (delta_cmax + delta_delay)], dtype=torch.float32, device=device)
 
 @ray.remote
 def step_as_task(p_idx: int, q_val: float, agent: Agent, last_env: Environment, action_id: int, device: str, clone: bool=False, train: bool=False, pb_size: int=0) -> Environment:
@@ -116,7 +111,7 @@ def take_one_step(agent: Agent, last_env: Environment, action_id: int, device: s
         if m1_job is not None and m1_job.is_done():
             next_env.last_job_in_pos  = -1
             next_env.next_M2_parallel = False
-    next_graph: HeteroData = next_env.state.to_hyper_graph_costs(last_job_in_pos=next_env.last_job_in_pos, current_time=next_env.action_time, device=device)
+    next_graph: HeteroData = next_env.state.to_hyper_graph(last_job_in_pos=next_env.last_job_in_pos, current_time=next_env.action_time, device=device)
     next_possible_decisions, next_decisionT = search_possible_decisions(env=next_env, device=device)
     if train:
         final: bool   = len(next_possible_decisions) == 0
@@ -140,7 +135,7 @@ def beam_solve_one(agent: Agent, gantt_path: str, path: str, size: str, id: str,
     i: Instance                 = Instance.load(path + size + "/instance_" +id+ ".json")
     init_state: State           = State(i, M, L, NB_STATIONS, BIG_STATION, [], automatic_build=True)
     init_state.compute_obj_values_and_upper_bounds(unloading_time=0, current_time=0)
-    graph: HeteroData           = init_state.to_hyper_graph_costs(last_job_in_pos=-1, current_time=0, device=device)
+    graph: HeteroData           = init_state.to_hyper_graph(last_job_in_pos=-1, current_time=0, device=device)
     env: Environment            = Environment(graph=graph, state=init_state, possible_decisions=None,
                                               decisionsT=None, init_UB_cmax=init_state.ub_cmax,
                                               init_UB_delay=init_state.ub_delay, n=len(i.jobs))
@@ -193,7 +188,7 @@ def repeated_solve_one(agent: Agent, gantt_path: str, path: str, size: str, id: 
         i: Instance          = Instance.load(path + size + "/instance_" +id+ ".json")
         init_state: State    = State(i, M, L, NB_STATIONS, BIG_STATION, [], automatic_build=True)
         init_state.compute_obj_values_and_upper_bounds(unloading_time=0, current_time=0)
-        graph: HeteroData    = init_state.to_hyper_graph_costs(last_job_in_pos=-1, current_time=0, device=device)
+        graph: HeteroData    = init_state.to_hyper_graph(last_job_in_pos=-1, current_time=0, device=device)
         env: Environment     = Environment(graph=graph, state=init_state, n=len(i.jobs))
         env.possible_decisions, env.decisionsT = search_possible_decisions(env=env, device=device)
         while env.possible_decisions:
@@ -212,17 +207,11 @@ def repeated_solve_one(agent: Agent, gantt_path: str, path: str, size: str, id: 
     results = pd.DataFrame({'id': [id], 'obj': [best_obj], 'delay': [best_state.total_delay], 'cmax': [best_state.cmax], 'computing_time': [computing_time]})
     results.to_csv(f"{path}{size}/{agent.prefix}gnn_solution_{extension}{id}.csv", index=False)
 
-def load_training_instance(path: str, size: str, id: str, dataset: str, scenario: str=None, tier: str=None) -> Instance:
-    if dataset == "controlled_orders_ub":
-        order_instance: OrderInstance = OrderInstance.load(f"{path}{size}/{scenario}/instance_{id}_{tier}.json")
-        return order_instance.to_combined_instance()
-    return Instance.load(path + size + "/instance_" +id+ ".json")
-
-def solve_one_for_training(agent: Agent, path: str, size: str, id: str, device: str, dataset: str="instances_cost", scenario: str=None, tier: str=None, greedy: bool=False, eps_threshold: float=0.0) -> tuple[int, int]:
-    i: Instance          = load_training_instance(path=path, size=size, id=id, dataset=dataset, scenario=scenario, tier=tier)
+def solve_one_for_training(agent: Agent, path: str, size: str, id: str, device: str, greedy: bool=False, eps_threshold: float=0.0) -> tuple[int, int]:
+    i: Instance          = Instance.load(path + size + "/instance_" +id+ ".json")
     init_state: State    = State(i, M, L, NB_STATIONS, BIG_STATION, [], automatic_build=True)
     init_state.compute_obj_values_and_upper_bounds(unloading_time=0, current_time=0)
-    graph: HeteroData    = init_state.to_hyper_graph_costs(last_job_in_pos=-1, current_time=0, device=device)
+    graph: HeteroData    = init_state.to_hyper_graph(last_job_in_pos=-1, current_time=0, device=device)
     env: Environment     = Environment(graph=graph, state=init_state, n=len(i.jobs))
     env.possible_decisions, env.decisionsT = search_possible_decisions(env=env, device=device)
     while env.possible_decisions:
@@ -247,71 +236,52 @@ def solve_all_test(agent: Agent, gantt_path:str, path: str, improve: bool, beam:
                     else:   
                         repeated_solve_one(agent=agent, gantt_path=f"{out_dir}gantt_{id}.png", path=path, size=folder, id=id, improve=improve, device=device, retires=RETRIES)
 
-def train(agent: Agent, path: str, device: str, dataset: str="instances_cost"):
+def train(agent: Agent, path: str, device: str):
     start_time = time.time()
     print("Loading dataset....")
     sizes: list[str]      = ["s", "m", "l", "xl"]
     complexity_limit: int = 1
     size: str             = "s"
     instance_id: str      = "1"
-    is_ub: bool           = (dataset == "controlled_orders_ub")
-    nb_train_ids: int     = CONTROLLED_UB_NB_TRAIN if is_ub else 150
-    nb_val_ids: int       = CONTROLLED_UB_NB_TEST if is_ub else 99
-    scenario: str         = CONTROLLED_UB_SCENARIOS[0] if is_ub else None
-    tier: str             = CONTROLLED_UB_TIERS[0] if is_ub else None
     sr: int               = SWITCH_RATE
     for episode in range(1, NB_EPISODES+1):
         if episode % sr == 0:
             sr              += 1000
             size             = random.choice(sizes[:complexity_limit])
-            instance_id: str = str(random.randint(1, nb_train_ids))
-            if is_ub:
-                # sample across the 3 cost scenarios and 3 cut_time tiers so training sees the
-                # full diversity of the controlled_orders_ub instances, not just one slice of it
-                scenario = random.choice(CONTROLLED_UB_SCENARIOS)
-                tier     = random.choice(CONTROLLED_UB_TIERS)
+            instance_id: str = str(random.randint(1, 150))
         eps_threshold: float = EPS_END + (EPS_START - EPS_END) * math.exp(-1. * episode / EPS_DECAY_RATE)
         greedy = True if episode < (0.8 * NB_EPISODES) else random.random() > 0.7
-        obj, ub = solve_one_for_training(agent=agent, path=path, size=size, id=instance_id, device=device, dataset=dataset, scenario=scenario, tier=tier, greedy=greedy, eps_threshold=eps_threshold)
+        obj, ub = solve_one_for_training(agent=agent, path=path, size=size, id=instance_id, device=device, greedy=greedy, eps_threshold=eps_threshold)
         computing_time = time.time() - start_time
         agent.diversity.update(eps_threshold)
         if episode == 1 or episode % VALIDATE_RATE == 0:
-            # rotate through one scenario per checkpoint (keeps validation cost bounded), but average
-            # over all 3 cut_time tiers within that scenario so consecutive points of a given scenario's
-            # curve are directly comparable (a single tier's difficulty no longer swings the curve
-            # point to point -- see the "late" tier near-zero-slack issue diagnosed earlier)
-            nb_scenarios: int  = len(CONTROLLED_UB_SCENARIOS) if is_ub else 1
-            v_scenario: str    = CONTROLLED_UB_SCENARIOS[(episode // VALIDATE_RATE) % nb_scenarios] if is_ub else None
-            v_tiers: list      = CONTROLLED_UB_TIERS if is_ub else [None]
             for vs in sizes[:complexity_limit]:
-                print(f"Validating size {vs}..." + (f" ({v_scenario})" if is_ub else ""))
+                print(f"Validating size {vs}...")
                 val_obj = 0
-                for v_tier in v_tiers:
-                    for id in range(1, nb_val_ids + 1):
-                        v_id: str = str(id)
-                        vo,_ = solve_one_for_training(agent=agent, path=path, size=vs, id=v_id, device=device, dataset=dataset, scenario=v_scenario, tier=v_tier, greedy=True, eps_threshold=0.0)
-                        val_obj += vo
-                val_obj /= float(nb_val_ids * len(v_tiers))
-                agent.add_obj(size=vs, obj=val_obj, scenario=v_scenario)
-                print(f"Valdation of size {vs} = AVG = {val_obj}...")
+                for id in range(1, 100):
+                    v_id: str = str(id)
+                    vo,_ = solve_one_for_training(agent=agent, path=path, size=vs, id=v_id, device=device, greedy=True, eps_threshold=0.0)
+                    val_obj += vo
+                val_obj /= 100.0
+                agent.add_obj(size=vs, obj=val_obj)
+                print(f"Valdation of size {vs} = AVG = {val_obj}...") 
         if episode % COMPLEXITY_RATE == 0 and complexity_limit<len(sizes):
             complexity_limit += 1
         if len(agent.memory) > BATCH_SIZE:
             loss: float = agent.optimize_policy()
             agent.optimize_target()
-            if episode>WARMUP_EPISODES and episode%LR_REDUCE_RATE==0 and agent.optimizer.param_groups[0]['lr']>MIN_LR:
+            if episode>WARMUP_EPISODES and episode%LR_REDUCE_RATE==0 and agent.optimizer.param_groups[0]['lr']>MIN_LR:                    
                 agent.optimizer.param_groups[0]['lr'] *= 0.5
-            print(f"Training episode: {episode} [time={computing_time:.2f}] -- instance: ({size}, {instance_id}{f', {scenario}, {tier}' if is_ub else ''}) -- obj: ({obj} / {int(ub)}) -- diversity rate (epsilion): {eps_threshold:.3f} -- loss: {loss:.5f} -- LR: {agent.optimizer.param_groups[0]['lr']:.0e}")
+            print(f"Training episode: {episode} [time={computing_time:.2f}] -- instance: ({size}, {instance_id}) -- obj: ({obj} / {int(ub)}) -- diversity rate (epsilion): {eps_threshold:.3f} -- loss: {loss:.5f} -- LR: {agent.optimizer.param_groups[0]['lr']:.0e}")
         else:
-            print(f"Training episode: {episode} [time={computing_time:.2f}] -- instance: ({size}, {instance_id}{f', {scenario}, {tier}' if is_ub else ''}) -- obj: ({obj} / {int(ub)}) -- diversity rate (epsilion): {eps_threshold:.3f} -- No optimization yet...")
+            print(f"Training episode: {episode} [time={computing_time:.2f}] -- instance: ({size}, {instance_id}) -- obj: ({obj} / {int(ub)}) -- diversity rate (epsilion): {eps_threshold:.3f} -- No optimization yet...")
         if episode % SAVING_RATE == 0 or episode == NB_EPISODES:
             agent.save()
     print("End!")
 
-# TRAIN WITH: python gnn_solver_costs.py --mode=train --interactive=true --load=false --path=. --custom=true
-# TRAIN ON controlled_orders_ub WITH: python gnn_solver_costs.py --mode=train --interactive=true --load=false --path=. --custom=true --dataset=controlled_orders_ub
-# TEST ONE WITH: python gnn_solver_costs.py --mode=test_one --size=s --id=1 --improve=true --interactive=false --load=true --path=. --custom=true --beam=true
-# SOLVE ALL WITH: python gnn_solver_costs.py --mode=test_all --improve=true --interactive=false --load=true --path=. --custom=true --beam=true
+# TRAIN WITH: python gnn_solver.py --mode=train --interactive=true --load=false --path=. --custom=true
+# TEST ONE WITH: python gnn_solver.py --mode=test_one --size=s --id=1 --improve=true --interactive=false --load=true --path=. --custom=true --beam=true
+# SOLVE ALL WITH: python gnn_solver.py --mode=test_all --improve=true --interactive=false --load=true --path=. --custom=true --beam=true
 if __name__ == "__main__":
     parser  = argparse.ArgumentParser(description="Exact solver (CP OR-tools version)")
     parser.add_argument("--path", help="path to load the instances", required=True)
@@ -323,29 +293,22 @@ if __name__ == "__main__":
     parser.add_argument("--custom", help="use the custom Q-net instead of a basic one", required=True)
     parser.add_argument("--beam", help="use the gnn-guided beam search", required=False)
     parser.add_argument("--improve", help="improve the solution using local improvement operator", required=False)
-    parser.add_argument("--dataset", help="training dataset: instances_cost (default, flat {a,jobs} format) or controlled_orders_ub (order-acceptance instances, merged into an accept-everything schedule)", required=False, default="instances_cost", choices=["instances_cost", "controlled_orders_ub"])
-    parser.add_argument("--agent_path", help="override the checkpoint directory (defaults to data/training_costs/ for instances_cost, data/training_costs_ub/ for controlled_orders_ub, to avoid overwriting the other agent)", required=False)
     args               = parser.parse_args()
     base_path: str     = args.path
-    dataset: str       = args.dataset
-    data_folder: str   = "controlled_orders_ub" if dataset == "controlled_orders_ub" else "instances_cost"
     instance_type: str = "debug/" if args.mode=="debug" else "train/" if args.mode == "train" else "test/"
-    path: str          = base_path + f"/data/{data_folder}/" + instance_type
+    path: str          = base_path + "/data/instances/" + instance_type
     gantt_path: str    = base_path + "/data/gantts/"
     load_weights: bool = to_bool(args.load)
     custom: bool       = to_bool(args.custom)
-    default_agent_dir: str = "/data/training_costs_ub/" if dataset == "controlled_orders_ub" else "/data/training_costs/"
-    agent_path: str    = args.agent_path if args.agent_path else base_path + default_agent_dir
-    os.makedirs(agent_path, exist_ok=True)
 
     interactive: bool  = to_bool(args.interactive)
-    #device: str      = torch.device("mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu")
-    device: str        = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device: str      = torch.device("mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu")
+    # device: str        = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Current computing device is: {device}...")
     ray.init(num_cpus=8, ignore_reinit_error=True)
-    agent: Agent       = Agent(device=device, interactive=interactive, load=load_weights, path=agent_path, train=(args.mode == "train"), custom=custom)
+    agent: Agent       = Agent(device=device, interactive=interactive, load=load_weights, path=base_path+'/data/training/', train=(args.mode == "train"), custom=custom)
     if args.mode == "train":
-        train(agent=agent, path=path, device=device, dataset=dataset)
+        train(agent=agent, path=path, device=device)
     elif args.mode == "test_all":
         beam: bool = to_bool(args.beam)
         solve_all_test(agent=agent, path=path, gantt_path=gantt_path, improve=to_bool(args.improve), beam=beam, device=device)

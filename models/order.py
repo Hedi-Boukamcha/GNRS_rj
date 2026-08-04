@@ -1,3 +1,4 @@
+# models/order.py
 from conf import *
 from models.instance import Operation, Job, Instance
 import json
@@ -46,7 +47,7 @@ class OrderInstance:
         with open(path, 'r') as f:
             _data = json.load(f)
         orders = []
-        for order_data in _data["orders"]:
+        for order_idx, order_data in enumerate(_data["orders"]):
             jobs = []
             for job_data in order_data["jobs"]:
                 operations = [Operation(type=op["type"], machineing_time=op["processing_time"]) for op in job_data["operations"]]
@@ -58,14 +59,14 @@ class OrderInstance:
                     operations   = operations,
                     status       = job_data["status"],
                     blocked      = job_data["blocked"],
-                    cost         = job_data["cost"]
-                )
+                    cost         = job_data["cost"],
+                    cut_time     = order_data["cut_time"],
+                    is_new       = (order_idx > 0))
                 jobs.append(job)
             orders.append(Order(
                 id       = order_data["id"],
                 cut_time = order_data["cut_time"],
-                jobs     = jobs
-            ))
+                jobs     = jobs))
         return OrderInstance(orders=orders, a=_data.get("a", 0))
 
     def display(self):

@@ -1,3 +1,4 @@
+# models/memory.py
 from collections import namedtuple, deque
 import random
 from conf import *

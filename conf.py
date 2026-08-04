@@ -1,4 +1,4 @@
-# Vocabulary
+# conf.py
 M: int = 3
 L: int = 2
 
@@ -59,7 +59,7 @@ GRAPH_DIM: int        = 32
 PB_SIZE_DIM: int      = 6
 
 # Nb raw features
-JOB_FEATURES: int     = 15
+JOB_FEATURES: int     = 17
 STATION_FEATURES: int = 2
 MACHINE_FEATURES: int = 3
 ROBOT_FEATURES: int   = 4
@@ -86,13 +86,13 @@ LR                  = 1e-3    # starting learning rate of AdamW
 MIN_LR              = 1.25e-4 # min learning rate of AdamW 
 EPS_START           = 0.99    # starting value of epsilon
 EPS_END             = 0.005   # final value of epsilon
-EPS_DECAY_RATE      = 22_000      # 22_000  # controls the rate of exponential decay of epsilon
-NB_EPISODES         = 80_000     # 80_000  # X (changes) episodes per instances on average
-COMPLEXITY_RATE     = 6000      # 6000    # curriculum learning rate: nb episodes before adding larger instances to the training set
+EPS_DECAY_RATE      = 22_000  # 22_000  # controls the rate of exponential decay of epsilon
+NB_EPISODES         = 80_000  # 80_000  # X (changes) episodes per instances on average
+COMPLEXITY_RATE     = 6000    # 6000    # curriculum learning rate: nb episodes before adding larger instances to the training set
 MAX_GRAD_NORM       = 30.0    # max norm for gradient clipping 
 LR_PATIENCE         = 800     # patience for the learning rate scheduler (in number of episodes)
 LR_REDUCE_RATE      = 3000     # 3000    # threshold for the learning rate scheduler
-REWARD_SCALE        = 1000    # scale factor for the reward (raised to compensate for normalizing the
+REWARD_SCALE        = 1        # scale factor for the reward (raised to compensate for normalizing the
                                # reward by the instance's own UB in gnn_solver[_costs].reward(): the
                                # reward is now a small fraction of the UB (~1e-2/1e-1) instead of a raw
                                # cmax/delay delta in the hundreds/thousands, so this compensates for the

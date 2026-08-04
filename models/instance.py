@@ -1,3 +1,4 @@
+# models/instance.py
 from conf import *
 import json
 
@@ -18,7 +19,7 @@ class Operation:
         return f"{{'type':{self.type}, 'processing_time':{self.processing_time}}}"
 
 class Job:
-    def __init__(self, big: int = 0, due_date: int = 0, release_date: int = 0, pos_time: int = 0, operations: list[Operation] = [], status: int = 0, blocked: int = 0, cost: int = 0):
+    def __init__(self, big: int = 0, due_date: int = 0, release_date: int = 0, pos_time: int = 0, operations: list[Operation] = [], status: int = 0, blocked: int = 0, cost: int = 0, is_new: bool = False, cut_time: int = 0):
         self.operations: list[Operation] = operations
         self.big: int = big
         self.due_date: int = due_date
@@ -27,10 +28,11 @@ class Job:
         self.status: int = status
         self.blocked: int = blocked
         self.cost: int = cost
-
-    
+        self.is_new: bool = is_new
+        self.cut_time: int = cut_time
+ 
     def __str__(self):
-        return f"{{'big':{self.big}, 'due_date':{self.due_date}, 'release_date':{self.release_date}, 'pos_time':{self.pos_time}, 'status':{self.status}, 'blocked':{self.blocked}, 'operations':{[o.__str__() for o in self.operations]}}}"
+        return f"{{'big':{self.big}, 'due_date':{self.due_date}, 'release_date':{self.release_date}, 'pos_time':{self.pos_time}, 'status':{self.status}, 'blocked':{self.blocked}, 'is_new':{self.is_new}, 'cut_time':{self.cut_time}, 'operations':{[o.__str__() for o in self.operations]}}}"
 
 class Instance:
     def __init__(self, jobs: list[Job] = [], n: int=0):

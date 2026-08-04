@@ -1,3 +1,4 @@
+# simulators/gnn_simulator.py
 from models.state import *
 from conf import * 
 

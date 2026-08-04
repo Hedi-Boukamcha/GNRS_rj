@@ -1,3 +1,4 @@
+# gantt_builder/gnn_gantt.py
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 

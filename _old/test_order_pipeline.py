@@ -6,7 +6,7 @@ from models.state import State
 from simulators.gnn_simulator import simulate, build_state_from_cut
 from models.agent import Agent
 from models.environment import Environment
-from gnn_solver import search_possible_decisions, take_one_step
+from _old.gnn_solver import search_possible_decisions, take_one_step
 from conf import *
 
 # #######################################################
