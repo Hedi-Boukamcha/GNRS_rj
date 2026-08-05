@@ -1,17 +1,17 @@
 {
-    "a": 0,
+    "a": 20,
     "scenario": "same_costs",
-    "ub_cmax_order_1": 147,
-    "ub_cmax_order_1_2": 133,
+    "ub_cmax_order_1": 125,
+    "ub_cmax_order_1_2": 188,
     "arrival_variant": "middle",
-    "arrival_cut_time": 43,
+    "arrival_cut_time": 50,
     "orders": [
         {
             "id": 1,
             "cut_time": 0,
             "jobs": [
                 {
-                    "big": 0,
+                    "big": 1,
                     "pos_time": 5,
                     "status": 0,
                     "blocked": 0,
@@ -19,11 +19,11 @@
                     "operations": [
                         {
                             "type": 0,
-                            "processing_time": 42
+                            "processing_time": 40
                         }
                     ],
-                    "release_date": 40,
-                    "due_date": 111
+                    "release_date": 12,
+                    "due_date": 67
                 },
                 {
                     "big": 1,
@@ -34,20 +34,24 @@
                     "operations": [
                         {
                             "type": 0,
-                            "processing_time": 29
+                            "processing_time": 21
+                        },
+                        {
+                            "type": 1,
+                            "processing_time": 35
                         }
                     ],
-                    "release_date": 6,
-                    "due_date": 62
+                    "release_date": 3,
+                    "due_date": 115
                 }
             ]
         },
         {
             "id": 2,
-            "cut_time": 43,
+            "cut_time": 50,
             "jobs": [
                 {
-                    "big": 1,
+                    "big": 0,
                     "pos_time": 5,
                     "status": 0,
                     "blocked": 0,
@@ -55,11 +59,15 @@
                     "operations": [
                         {
                             "type": 1,
-                            "processing_time": 19
+                            "processing_time": 36
+                        },
+                        {
+                            "type": 0,
+                            "processing_time": 11
                         }
                     ],
-                    "release_date": 57,
-                    "due_date": 97
+                    "release_date": 86,
+                    "due_date": 161
                 }
             ]
         }

@@ -1,10 +1,10 @@
 {
     "a": 0,
     "scenario": "same_costs",
-    "ub_cmax_order_1": 203,
-    "ub_cmax_order_1_2": 300,
+    "ub_cmax_order_1": 196,
+    "ub_cmax_order_1_2": 243,
     "arrival_variant": "early",
-    "arrival_cut_time": 15,
+    "arrival_cut_time": 43,
     "orders": [
         {
             "id": 1,
@@ -19,11 +19,11 @@
                     "operations": [
                         {
                             "type": 0,
-                            "processing_time": 35
+                            "processing_time": 44
                         }
                     ],
-                    "release_date": 32,
-                    "due_date": 116
+                    "release_date": 35,
+                    "due_date": 130
                 },
                 {
                     "big": 1,
@@ -33,22 +33,22 @@
                     "cost": 1.0,
                     "operations": [
                         {
-                            "type": 0,
-                            "processing_time": 34
+                            "type": 1,
+                            "processing_time": 39
                         },
                         {
-                            "type": 1,
-                            "processing_time": 43
+                            "type": 0,
+                            "processing_time": 52
                         }
                     ],
-                    "release_date": 49,
-                    "due_date": 173
+                    "release_date": 35,
+                    "due_date": 163
                 }
             ]
         },
         {
             "id": 2,
-            "cut_time": 15,
+            "cut_time": 43,
             "jobs": [
                 {
                     "big": 1,
@@ -58,16 +58,12 @@
                     "cost": 1.0,
                     "operations": [
                         {
-                            "type": 1,
-                            "processing_time": 46
-                        },
-                        {
                             "type": 0,
-                            "processing_time": 42
+                            "processing_time": 37
                         }
                     ],
-                    "release_date": 41,
-                    "due_date": 185
+                    "release_date": 46,
+                    "due_date": 116
                 }
             ]
         }

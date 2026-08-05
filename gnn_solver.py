@@ -309,7 +309,7 @@ def train(agent: Agent, path: str, device: str, dataset: str="instances_cost"):
             agent.save()
     print("End!")
 
-# TRAIN WITH: python gnn_solver_costs.py --mode=train --interactive=true --load=false --path=. --custom=true
+# TRAIN WITH: python gnn_solver.py --mode=train --interactive=true --load=false --path=. --custom=true --dataset=controlled_orders_ub
 # TRAIN ON controlled_orders_ub WITH: python gnn_solver_costs.py --mode=train --interactive=true --load=false --path=. --custom=true --dataset=controlled_orders_ub
 # TEST ONE WITH: python gnn_solver_costs.py --mode=test_one --size=s --id=1 --improve=true --interactive=false --load=true --path=. --custom=true --beam=true
 # SOLVE ALL WITH: python gnn_solver_costs.py --mode=test_all --improve=true --interactive=false --load=true --path=. --custom=true --beam=true
