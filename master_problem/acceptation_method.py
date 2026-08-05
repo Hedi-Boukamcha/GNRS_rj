@@ -684,24 +684,6 @@ def bfs_backward(state: State, new_jobs: list[Job], cut_time: int, agent: Agent,
 # Forward et backward tournent ensemble, niveau par niveau, en partageant les
 # sous-ensembles elagues trouves par l'un ou l'autre sens de recherche.
 def bfs_bidirectional(state: State, new_jobs: list[Job], cut_time: int, agent: Agent, device: str, all_weights: dict, delta_ratio: float = 0.2, gantt_dir: str | None = None) -> list[Job]:
-    """
-    Fait avancer bfs_forward (grandit depuis les singletons) et bfs_backward
-    (retrecit depuis l'ensemble complet) EN MEME TEMPS, un niveau a la fois,
-    en partageant un seul ensemble `pruned_keys` de sous-ensembles confirmes
-    infaisables (regle de monotonie : si S est infaisable, tout sur-ensemble
-    de S l'est aussi). Des qu'un cote evalue un sous-ensemble infaisable,
-    l'AUTRE cote en beneficie immediatement au prochain niveau : il saute
-    l'evaluation (couteuse, rollout GNN) de tout candidat qui contient ce
-    sous-ensemble elague, sans avoir a le decouvrir lui-meme.
-
-    Arret :
-      - backward termine des qu'un niveau contient >=1 sous-ensemble faisable
-        (comme bfs_backward seul : c'est alors forcement le plus grand
-        possible) -> reponse exacte immediate, forward est arrete aussi.
-      - si forward trouve un sous-ensemble faisable strictement plus grand
-        que la taille du prochain niveau backward a explorer, backward ne
-        peut plus faire mieux -> on l'arrete plus tot.
-    """
     nb_existing = len(state.job_states)
     start_time = time.perf_counter()
 
@@ -711,7 +693,7 @@ def bfs_bidirectional(state: State, new_jobs: list[Job], cut_time: int, agent: A
 
     cost_ref, cmax_ref = compute_current_schedule_ref(state, all_weights)
     cost_max = cost_ref * (1 + delta_ratio)
-    print("\n  === BFS bidirectionnel (forward + backward partages) ===")
+    print("\n  === BFS bidirectionnel (forward + backward) ===")
     print(f"  cost_ref={cost_ref:.4f} | cost_max={cost_max:.4f}")
 
     def subset_key(subset):
@@ -725,9 +707,7 @@ def bfs_bidirectional(state: State, new_jobs: list[Job], cut_time: int, agent: A
     def evaluate(subset):
         nonlocal n_evaluated
         n_evaluated += 1
-        return evaluate_subset(
-            state, subset, new_jobs, cut_time, nb_existing, agent, device, all_weights, gantt_dir=gantt_dir
-        )
+        return evaluate_subset(state, subset, new_jobs, cut_time, nb_existing, agent, device, all_weights, gantt_dir=gantt_dir)
 
     best_subset, best_cost, best_cmax = [], cost_ref, cmax_ref
 

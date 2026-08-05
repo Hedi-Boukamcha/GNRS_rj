@@ -687,11 +687,16 @@ def get_loading_time_and_force_unloading_previous(
     current_job: JobState = station.current_job
     last_op: OperationState = current_job.get_last_executed_operation()
 
-    if last_op is None:
-        return float("inf")
-
     if current_job.location is None:
         return float("inf")
+
+    # Job jamais exécuté (encore à la station, jamais parti vers une machine) : rien à
+    # ramener, on peut le décharger directement -- cohérent avec test_loading_time qui
+    # traite déjà ce cas comme faisable (sinon l'estimateur choisit une station que le
+    # forçage refuse ensuite, d'où le "Impossible de libérer S.. pour charger J..").
+    if last_op is None:
+        if current_job.location.position_type != POS_STATION:
+            return float("inf")
 
     # Si le job bloquant est encore sur machine 1, on le ramène aux stations
     if current_job.location.position_type == POS_MACHINE_1:

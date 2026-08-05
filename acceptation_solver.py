@@ -36,17 +36,17 @@ def run_one_controlled_instance(
     output_dir = os.path.join(
         output_root,
         scenario,
+        delta_name,
         inst,
-        variant,
-        delta_name
+        variant
     )
 
     analysis_dir = os.path.join(
         "analysis",
         scenario,
+        delta_name,
         inst,
-        variant,
-        delta_name
+        variant
     )
 
     gantt_dir = os.path.join(
@@ -436,6 +436,15 @@ def run_all_controlled_instances(
 # python acceptation_solver.py.py --mode all --root_dir "data/controlled_orders/test/same_costs_dd_serre_N" --inst_filter "inst2" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
 # python acceptation_solver.py.py --mode all --root_dir "data/controlled_orders/test/E_90_100_N_40_50_dd_serre_N" --inst_filter "inst2" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
 # python acceptation_solver.py.py --mode all --root_dir "data/controlled_orders/test/E_90_100_N_1_10_dd_serre_N/" --inst_filter "inst2" --delta_ratio 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts false
+
+# ========================================
+# RUN: by insatnces with one value of delta
+# python acceptation_solver.py --mode all --root_dir "data/controlled_orders_ub/test/s" --output_root "results/controlled_orders/test" --deltas 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts true
+
+
+# RUN: by insatnces with multiple value of delta
+# python acceptation_solver.py --mode all --root_dir "data/controlled_orders_ub/test/s" --output_root "results/controlled_orders/test" --deltas 0.1 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts true
+# python acceptation_solver.py --mode all --root_dir "data/controlled_orders_ub/test/m" --output_root "results/controlled_orders/test" --deltas 0.1 0.2 --device mps --agent_path "data/training_costs/" --generate_gantts true
 
 
 if __name__ == "__main__":
