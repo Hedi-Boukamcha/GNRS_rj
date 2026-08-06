@@ -23,72 +23,39 @@ __email__   = "hedi.boukamcha.1@ulaval.ca"
 __version__ = "2.0.0" 
 __license__ = "MIT"
 
-
 def save_step_gantt(env, gantt_dir: str | None, label: str, step: int, cut_times: list[int] | None = None):
-    if gantt_dir is None:
-        return
+    if gantt_dir is None: return
     os.makedirs(gantt_dir, exist_ok=True)
     path = os.path.join(gantt_dir, f"{label}_step_{step:03d}.png")
-
     gnn_gantt(path, env.state, f"{label} | step {step}", cut_times=cut_times or [])
 
-# Definition de la valeur du retard actuel (de reference)
 def compute_current_schedule_ref(state: State, all_weights: dict) -> tuple[float, int]:
-    """
-    Calcule le coût de référence à partir de la cédule actuelle.
-    Aucun rescheduling n'est effectué.
-    """
-
+    """ Compute the reference cost from current schedule"""
     cost_ref = sum(
         all_weights[id(j.job)] * j.delay
-        for j in state.job_states
-    )
-
+        for j in state.job_states)
     cmax_ref = state.cmax
-    #breakpoint()
     print("\n  === Référence cédule actuelle ===")
     print(f"  tardiness ref existants : {[j.delay for j in state.job_states]}")
     print(f"  weights ref existants   : {[round(all_weights[id(j.job)], 4) for j in state.job_states]}")
     print(f"  cost_ref                : {cost_ref:.4f}")
     print(f"  cmax_ref                : {cmax_ref}")
-
     return cost_ref, cmax_ref
 
-# calculer les cout
-def compute_urgency_weight(j: JobState) -> float:
-    r = j.job.release_date
-    d = j.job.due_date
-    return 1.0 / (1.0 + max(0, d - r))
-
-# calculer les cout du retard
-def compute_weighted_tardiness(job_states: list[JobState]) -> float:
-    return sum(
-        compute_urgency_weight(j) * j.delay
-        for j in job_states
-    )
-
 def subset_name(subset, new_jobs):
-    if not subset:
-        return "empty"
-
+    if not subset: return "empty"
     return "_".join(
         f"J{new_jobs.index(job) + 1}"
-        for job in subset
-    )
-
+        for job in subset)
 
 def safe_position_name(pos):
-    if pos is None:
-        return "None"
-
+    if pos is None: return "None"
     if hasattr(pos, "position_type"):
         try:
             return LOCATION_NAMES[pos.position_type]
         except Exception:
             return f"pos_type={pos.position_type}"
-
     return str(pos)
-
 
 def safe_event_type_name(event_type):
     try:
@@ -96,34 +63,27 @@ def safe_event_type_name(event_type):
     except Exception:
         return str(event_type)
 
-
 def safe_job_name(job):
     if job is None:
         return "None"
     return f"J{job.id + 1}"
-
 
 def safe_operation_name(operation):
     if operation is None:
         return "None"
     return f"O{operation.id + 1}"
 
-
 def safe_station_name(station):
     if station is None:
         return "None"
     return f"S{station.id + 1}"
 
-
 def print_calendar(calendar, title: str):
     print(f"\n--- {title} ---")
-
     if calendar is None or not calendar.has_events():
         print("  Aucun événement")
         return
-
     events = sorted(calendar.events, key=lambda e: (e.start, e.end))
-
     for e in events:
         print(
             f"  [{e.start:>4} -> {e.end:>4}] "
@@ -132,16 +92,12 @@ def print_calendar(calendar, title: str):
             f"op={safe_operation_name(e.operation):<5} | "
             f"station={safe_station_name(e.station):<5} | "
             f"source={safe_position_name(e.source):<12} | "
-            f"dest={safe_position_name(e.dest):<12}"
-        )
-
+            f"dest={safe_position_name(e.dest):<12}")
 
 def check_calendar_overlaps(calendar, title: str):
     if calendar is None or not calendar.has_events():
         return
-
     events = sorted(calendar.events, key=lambda e: (e.start, e.end))
-
     for prev, curr in zip(events, events[1:]):
         if curr.start < prev.end:
             print(
@@ -152,41 +108,30 @@ def check_calendar_overlaps(calendar, title: str):
                 f"avec "
                 f"[{curr.start}->{curr.end}] "
                 f"{safe_event_type_name(curr.event_type)} "
-                f"{safe_job_name(curr.job)}"
-            )
-
+                f"{safe_job_name(curr.job)}")
 
 def print_state_calendars(state: State, title: str = ""):
     print("\n" + "=" * 100)
-    print(f"📅 CALENDRIERS {title}")
+    print(f"📅 CALENDARS {title}")
     print("=" * 100)
-
     print(
         f"\nSTATE | cmax={state.cmax} | "
         f"start_time={state.start_time} | "
-        f"total_delay={state.total_delay}"
-    )
-
+        f"total_delay={state.total_delay}")
     print(
         f"\nMACHINE 1 | free_at={state.machine1.free_at} | "
         f"current_job={safe_job_name(state.machine1.current_job)} | "
-        f"pos_is_full={getattr(state.machine1, 'pos_is_full', None)}"
-    )
+        f"pos_is_full={getattr(state.machine1, 'pos_is_full', None)}")
     print_calendar(state.machine1.calendar, "MACHINE 1")
-
     print(
         f"\nMACHINE 2 | free_at={state.machine2.free_at} | "
-        f"current_job={safe_job_name(state.machine2.current_job)}"
-    )
+        f"current_job={safe_job_name(state.machine2.current_job)}")
     print_calendar(state.machine2.calendar, "MACHINE 2")
-
     print(
         f"\nROBOT | free_at={state.robot.free_at} | "
         f"current_job={safe_job_name(state.robot.current_job)} | "
-        f"location={safe_position_name(state.robot.location)}"
-    )
+        f"location={safe_position_name(state.robot.location)}")
     print_calendar(state.robot.calendar, "ROBOT")
-
     for s in state.all_stations.stations:
         print(
             f"\nSTATION S{s.id + 1} | free_at={s.free_at} | "
@@ -194,7 +139,6 @@ def print_state_calendars(state: State, title: str = ""):
             f"accept_big={s.accept_big}"
         )
         print_calendar(s.calendar, f"STATION S{s.id + 1}")
-
     for j in state.job_states:
         print(
             f"\nJOB J{j.id + 1} | "
@@ -207,7 +151,6 @@ def print_state_calendars(state: State, title: str = ""):
             f"end={j.end} | "
             f"delay={j.delay}"
         )
-
         for o in j.operation_states:
             print(
                 f"    O{o.id + 1} | "
@@ -218,11 +161,8 @@ def print_state_calendars(state: State, title: str = ""):
                 f"start={o.start} | "
                 f"end={o.end}"
             )
-
         print_calendar(j.calendar, f"JOB J{j.id + 1}")
-
     print("\n--- CHECK OVERLAPS ---")
-
     check_calendar_overlaps(state.machine1.calendar, "MACHINE 1")
     check_calendar_overlaps(state.machine2.calendar, "MACHINE 2")
     check_calendar_overlaps(state.robot.calendar, "ROBOT")
@@ -234,9 +174,8 @@ def print_state_calendars(state: State, title: str = ""):
         check_calendar_overlaps(j.calendar, f"JOB J{j.id + 1}")
 
     print("\n" + "=" * 100)
-    print("FIN CALENDRIERS")
+    print("END OF CALENDARS")
     print("=" * 100 + "\n")
-
 
 # Evaluation des nouveaux jobs (sous ensembles): qq soit un seul job ou bien une combinaison de plusieurs jobs
 def _find_wait_time(cut_state: State, cut_time: int) -> int | None:
@@ -255,7 +194,6 @@ def _find_wait_time(cut_state: State, cut_time: int) -> int | None:
                 break
     return min(ends) if ends else None
 
-
 def _greedy_rollout(cut_state: State, start_time: int, agent: Agent, device: str) -> Environment | None:
     """
     Rollout greedy du GNN depuis start_time sur cut_state (modifié en place).
@@ -266,70 +204,46 @@ def _greedy_rollout(cut_state: State, start_time: int, agent: Agent, device: str
     env = Environment(graph=graph, state=cut_state, n=len(cut_state.job_states), action_time=start_time)
     env.possible_decisions, env.decisionsT = search_possible_decisions(env=env, device=device)
     while env.possible_decisions:
-        q_values = agent.get_all_q_values(env.graph, env.decisionsT)
-        ranked_actions = sorted(
-            range(len(env.possible_decisions)),
-            key=lambda i: q_values[i].item(),
-            reverse=True
-        )
-        success = False
-        last_error = None
-        for action_id in ranked_actions:
-            try:
-                env = take_one_step(
-                    agent=agent,
-                    last_env=env,
-                    action_id=action_id,
-                    device=device,
-                    clone=True
-                )
-                success = True
-                break
-            except RuntimeError as e:
-                last_error = e
-                continue
-        if not success:
-            print(f"    ⚠️ Aucune décision faisable à cette étape : {last_error}")
-            return None
+        action_id: int = agent.select_next_decision(graph=env.graph, decisionsT=env.decisionsT, greedy=True)
+        env = take_one_step(agent=agent,
+                            last_env=env,
+                            action_id=action_id,
+                            device=device,
+                            clone=True)
     return env
-
 
 def evaluate_subset(state: State, subset: list[Job], new_jobs: list[Job], cut_time: int, nb_existing: int, agent: Agent, device: str, all_weights: dict, gantt_dir: str | None = None) -> tuple[float, float, float, int]:
     """
     Reschedule le pool existant + le sous-ensemble S en deux branches :
-      - immédiate : re-cédulation dès cut_time (les nouveaux peuvent passer avant les existants) ;
-      - différée  : re-cédulation à la fin de l'opération en cours, où existants et nouveaux
+      - immediate : re-cédulation dès cut_time (les nouveaux peuvent passer avant les existants) ;
+      - delayed  : re-cédulation à la fin de l'opération en cours, où existants et nouveaux
         sont simultanément actionnables et le GNN arbitre librement selon ses Q-valeurs.
     La meilleure branche (coût pondéré total, puis cmax) est retenue.
     Retourne cost_existants, cost_nouveaux, total_cost, cmax.
     """
     if gantt_dir is not None:
         os.makedirs(gantt_dir, exist_ok=True)
-
-        existing_gantt_path = os.path.join(
-            gantt_dir,
-            f"existing_only_cut_{cut_time}.png"
-        )
-
+        existing_gantt_path = os.path.join(gantt_dir, f"existing_only_cut_{cut_time}.png")
         gnn_gantt(
             existing_gantt_path,
             state,
             f"Existing jobs only | cut={cut_time}",
-            cut_times=[cut_time]
-        )
-
-        print(f"    📊 Gantt existants sauvegardé : {existing_gantt_path}")
-
+            cut_times=[cut_time])
+        print(f"    📊 Gantt saved in: {existing_gantt_path}")
     cut_state = build_state_from_cut(state, cut_time)
-
     cut_state.add_jobs_to_state(subset)
     wait_time = _find_wait_time(cut_state, cut_time)
 
-    branches = [("immédiate", cut_time, cut_state)]
+    branches     = []
+    robot_locked = cut_state.robot.free_at > cut_time
+    m1_locked    = cut_state.machine1.free_at > cut_time
+    m2_locked    = cut_state.machine2.free_at > cut_time
+    if not (robot_locked and m1_locked and m2_locked):
+        branches.append(("immediate", cut_time, cut_state))
     if wait_time is not None and wait_time > cut_time:
         wait_state = build_state_from_cut(state, wait_time)
         wait_state.add_jobs_to_state(subset)
-        branches.append(("différée", wait_time, wait_state))
+        branches.append(("delayed", wait_time, wait_state))
 
     best_env = None
     best_costs = None
@@ -397,287 +311,6 @@ def evaluate_subset(state: State, subset: list[Job], new_jobs: list[Job], cut_ti
         title=f"| subset={subset_name(subset, new_jobs)} | cut={cut_time} | cmax={env.state.cmax}"
     )"""
     return cost_existants, cost_nouveaux, total_cost, env.state.cmax
-
-
-# Recherche en largeur des nouveaux jobs dans l'arbre
-def bfs_forward(state: State, new_jobs: list[Job], cut_time: int, agent: Agent, device: str, all_weights: dict, delta_ratio: float = 0.2, gantt_dir: str | None = None) -> list[Job]:
-    """
-    BFS Forward : explore les sous-ensembles de new_jobs à accepter.
-    """
-
-    nb_existing = len(state.job_states)
-
-    start_time = time.perf_counter()
-
-    n_evaluated = 0
-    n_valid = 0
-    n_pruned = 0
-    n_skipped = 0
-
-    print("\n  === Weights utilisés ===")
-
-    print("  Jobs existants:")
-    for j in state.job_states:
-        print(
-            f"    J{j.id + 1} | "
-            f"dd={j.job.due_date} | "
-            f"weight={all_weights[id(j.job)]:.4f}"
-        )
-
-    print("  Nouveaux jobs:")
-    for i, job in enumerate(new_jobs):
-        print(
-            f"    New J{i + 1} | "
-            #f"dd={job.due_date} | "
-            f"weight={all_weights[id(job)]:.4f}"
-        )
-
-    cost_ref, cmax_ref = compute_current_schedule_ref(state, all_weights)
-    cost_max = cost_ref * (1 + delta_ratio)
-
-    print(f"\n  cost_ref={cost_ref:.4f} | cost_max={cost_max:.4f}")
-
-    best_subset = []
-    best_cmax = float("inf")
-    best_cost = float("inf")
-
-    visited = set()
-    pruned_subsets = set()
-
-    queue = [[job] for job in new_jobs]
-
-    def subset_key(subset):
-        return frozenset(id(j) for j in subset)
-
-    def contains_pruned_subset(key):
-        return any(pruned_key.issubset(key) for pruned_key in pruned_subsets)
-
-    while queue:
-        current_subset = queue.pop(0)
-        current_key = subset_key(current_subset)
-
-        if current_key in visited:
-            continue
-
-        if contains_pruned_subset(current_key):
-            print(
-                f"⏭️ Skip {[f'J{new_jobs.index(j)+1}' for j in current_subset]} "
-                f"car contient un subset déjà élagué"
-            )
-            n_skipped += 1
-            visited.add(current_key)
-            continue
-        visited.add(current_key)
-        print(
-            f"\n  → Subset="
-            f"{[f'J{new_jobs.index(j)+1}(dd={j.due_date})' for j in current_subset]} "
-            f"| size={len(current_subset)}"
-        )
-        n_evaluated += 1
-        cost_existants, cost_nouveaux, total_cost, cmax = evaluate_subset(
-            state,
-            current_subset,
-            new_jobs,
-            cut_time,
-            nb_existing,
-            agent,
-            device,
-            all_weights,
-            gantt_dir=gantt_dir
-        )
-        print(
-            f"cost_existants={cost_existants:.4f} | "
-            f"cost_nouveaux={cost_nouveaux:.4f} | "
-            f"total_cost={total_cost:.4f} | "
-            f"cost_max={cost_max:.4f} | "
-            f"cmax={cmax}"
-        )
-        if cost_existants <= cost_max:
-            n_valid += 1
-            print("     ✅ Valide → extension")
-            if len(current_subset) > len(best_subset):
-                best_subset = current_subset
-                best_cmax = cmax
-                best_cost = total_cost
-            elif len(current_subset) == len(best_subset):
-                if total_cost < best_cost:
-                    best_subset = current_subset
-                    best_cmax = cmax
-                    best_cost = total_cost
-                elif total_cost == best_cost and cmax < best_cmax:
-                    best_subset = current_subset
-                    best_cmax = cmax
-                    best_cost = total_cost
-            for job in new_jobs:
-                if job not in current_subset:
-                    new_subset = current_subset + [job]
-                    new_key = subset_key(new_subset)
-                    if new_key not in visited:
-                        queue.append(new_subset)
-        else:
-            n_pruned += 1
-            print(
-                f"     ❌ Élagué "
-                f"(cost_existants={cost_existants:.4f} > cost_max={cost_max:.4f})"
-            )
-            pruned_subsets.add(current_key)
-
-    end_time = time.perf_counter()
-    acceptance_time = end_time - start_time
-
-    print("\n  === Statistiques méthode d'acceptation ===")
-    #print(f"  Temps computationnel : {acceptance_time:.4f} secondes")
-    print(f"  Subsets évalués     : {n_evaluated}")
-    print(f"  Subsets valides     : {n_valid}")
-    print(f"  Subsets élagués     : {n_pruned}")
-    print(f"  Subsets skippés     : {n_skipped}")
-
-    print("\n  === Résultat BFS ===")
-    print(
-        f"  Best subset : "
-        f"{[f'J{new_jobs.index(j)+1}(dd={j.due_date})' for j in best_subset]}"
-    )
-    print(f"  Best size   : {len(best_subset)}")
-    print(f"  Best cost   : {best_cost:.4f}")
-    print(f"  Best cmax   : {best_cmax}")
-
-    return best_subset
-
-
-# Recherche en largeur inverse : part de l'ensemble complet et retire des jobs
-def bfs_backward(state: State, new_jobs: list[Job], cut_time: int, agent: Agent, device: str, all_weights: dict, delta_ratio: float = 0.2, gantt_dir: str | None = None) -> list[Job]:
-    """
-    BFS Backward (inverse de bfs_forward) : part du sous-ensemble complet des
-    new_jobs et retire des jobs un a un, niveau par niveau, jusqu'a trouver un
-    niveau contenant au moins un sous-ensemble faisable (cost_existants <=
-    cost_max). Comme cost_existants croit avec le nombre de nouveaux jobs
-    acceptes (meme hypothese de monotonie que celle utilisee par bfs_forward
-    pour elaguer les sur-ensembles), le premier niveau faisable contient
-    forcement le/les plus grand(s) sous-ensemble(s) faisable(s) : inutile
-    d'explorer les niveaux plus petits. Beaucoup plus rapide que bfs_forward
-    quand la plupart des nouveaux jobs sont habituellement acceptables,
-    puisque bfs_forward doit alors explorer tout le powerset pour y arriver
-    en grandissant depuis les singletons.
-    """
-    nb_existing = len(state.job_states)
-
-    start_time = time.perf_counter()
-
-    n_evaluated = 0
-    n_valid = 0
-    n_pruned = 0
-
-    print("\n  === Weights utilisés (BFS backward) ===")
-
-    print("  Jobs existants:")
-    for j in state.job_states:
-        print(
-            f"    J{j.id + 1} | "
-            f"dd={j.job.due_date} | "
-            f"weight={all_weights[id(j.job)]:.4f}"
-        )
-
-    print("  Nouveaux jobs:")
-    for i, job in enumerate(new_jobs):
-        print(
-            f"    New J{i + 1} | "
-            f"weight={all_weights[id(job)]:.4f}"
-        )
-
-    cost_ref, cmax_ref = compute_current_schedule_ref(state, all_weights)
-    cost_max = cost_ref * (1 + delta_ratio)
-
-    print(f"\n  cost_ref={cost_ref:.4f} | cost_max={cost_max:.4f}")
-
-    def subset_key(subset):
-        return frozenset(id(j) for j in subset)
-
-    visited = set()
-    level = [list(new_jobs)]  # niveau 0 : ensemble complet (tous acceptes)
-
-    best_subset, best_cost, best_cmax = [], cost_ref, cmax_ref
-
-    while level:
-        level_results = []  # (subset, total_cost, cmax) des sous-ensembles faisables de ce niveau
-
-        for subset in level:
-            key = subset_key(subset)
-            if key in visited:
-                continue
-            visited.add(key)
-
-            print(
-                f"\n  → Subset="
-                f"{[f'J{new_jobs.index(j)+1}(dd={j.due_date})' for j in subset]} "
-                f"| size={len(subset)}"
-            )
-            n_evaluated += 1
-            cost_existants, cost_nouveaux, total_cost, cmax = evaluate_subset(
-                state,
-                subset,
-                new_jobs,
-                cut_time,
-                nb_existing,
-                agent,
-                device,
-                all_weights,
-                gantt_dir=gantt_dir
-            )
-            print(
-                f"cost_existants={cost_existants:.4f} | "
-                f"cost_nouveaux={cost_nouveaux:.4f} | "
-                f"total_cost={total_cost:.4f} | "
-                f"cost_max={cost_max:.4f} | "
-                f"cmax={cmax}"
-            )
-            if cost_existants <= cost_max:
-                n_valid += 1
-                print("     ✅ Valide")
-                level_results.append((subset, total_cost, cmax))
-            else:
-                n_pruned += 1
-                print(
-                    f"     ❌ Élagué "
-                    f"(cost_existants={cost_existants:.4f} > cost_max={cost_max:.4f})"
-                )
-
-        if level_results:
-            best_subset, best_cost, best_cmax = min(level_results, key=lambda r: (r[1], r[2]))
-            break
-
-        # Aucun sous-ensemble faisable a ce niveau -> niveau suivant : tous les
-        # sous-ensembles obtenus en retirant exactement 1 job supplementaire
-        next_level = []
-        next_keys = set()
-        for subset in level:
-            for job in subset:
-                child = [j for j in subset if j is not job]
-                child_key = subset_key(child)
-                if child_key not in visited and child_key not in next_keys:
-                    next_keys.add(child_key)
-                    next_level.append(child)
-        level = next_level
-
-    end_time = time.perf_counter()
-    acceptance_time = end_time - start_time
-
-    print("\n  === Statistiques méthode d'acceptation (backward) ===")
-    print(f"  Temps computationnel : {acceptance_time:.4f} secondes")
-    print(f"  Subsets évalués     : {n_evaluated}")
-    print(f"  Subsets valides     : {n_valid}")
-    print(f"  Subsets élagués     : {n_pruned}")
-
-    print("\n  === Résultat BFS backward ===")
-    print(
-        f"  Best subset : "
-        f"{[f'J{new_jobs.index(j)+1}(dd={j.due_date})' for j in best_subset]}"
-    )
-    print(f"  Best size   : {len(best_subset)}")
-    print(f"  Best cost   : {best_cost:.4f}")
-    print(f"  Best cmax   : {best_cmax}")
-
-    return best_subset
-
 
 # Forward et backward tournent ensemble, niveau par niveau, en partageant les
 # sous-ensembles elagues trouves par l'un ou l'autre sens de recherche.
@@ -914,7 +547,8 @@ def save_acceptation_analysis_csv(
                 r2(ratio_due),
                 "",              # Ratio_diff_Tj_initial : pas applicable
                 ""
-            ])            
+            ])         
+   
 def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str, delta_ratio: float = 0.2, gantt_dir: str | None = None, save_step_gantts: bool = False, analysis_dir: str | None = None) -> State:
     """
     Pipeline complet : schedule Order 1 puis applique le Master Problem pour chaque order suivant.
@@ -928,49 +562,16 @@ def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str,
     env         = Environment(graph=graph, state=state, n=len(instance.jobs))
     env.possible_decisions, env.decisionsT = search_possible_decisions(env=env, device=device)
     all_weights = {}
-
-    # Temps total de toute la méthode d'acceptation
     global_start_time = time.perf_counter()
-
     step = 0
-
-    """while env.possible_decisions:
-        action_id = agent.select_next_decision(
-            graph=env.graph,
-            decisionsT=env.decisionsT,
-            greedy=True
-        )
-
-        env = take_one_step(
-            agent=agent,
-            last_env=env,
-            action_id=action_id,
-            device=device
-        )
-
-        step += 1
-
-        if save_step_gantts:
-            save_step_gantt(
-                env=env,
-                gantt_dir=gantt_dir,
-                label="order_1",
-                step=step,
-                cut_times=[]
-            )"""
-    
     while env.possible_decisions:
         q_values = agent.get_all_q_values(env.graph, env.decisionsT)
-
         ranked_actions = sorted(
             range(len(env.possible_decisions)),
             key=lambda i: q_values[i].item(),
-            reverse=True
-        )
-
-        success = False
+            reverse=True)
+        success   = False
         last_error = None
-
         for action_id in ranked_actions:
             try:
                 trial_env = take_one_step(
@@ -978,21 +579,17 @@ def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str,
                     last_env=env,
                     action_id=action_id,
                     device=device,
-                    clone=True
-                )
-
-                env = trial_env
+                    clone=True)
+                env     = trial_env
                 success = True
-                step += 1
-
+                step   += 1
                 if save_step_gantts:
                     save_step_gantt(
                         env=env,
                         gantt_dir=gantt_dir,
                         label="order_1",
                         step=step,
-                        cut_times=[]
-                    )
+                        cut_times=[])
 
                 break
 
@@ -1093,11 +690,16 @@ def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str,
         cut_state.add_jobs_to_state(best_subset)
         wait_time = _find_wait_time(cut_state, cut_time)
 
-        branches = [("immédiate", cut_time, cut_state)]
+        branches     = []
+        robot_locked = cut_state.robot.free_at > cut_time
+        m1_locked    = cut_state.machine1.free_at > cut_time
+        m2_locked    = cut_state.machine2.free_at > cut_time
+        if not (robot_locked and m1_locked and m2_locked):
+            branches.append(("immediate", cut_time, cut_state))
         if wait_time is not None and wait_time > cut_time:
             wait_state = build_state_from_cut(base_state, wait_time)
             wait_state.add_jobs_to_state(best_subset)
-            branches.append(("différée", wait_time, wait_state))
+            branches.append(("delayed", wait_time, wait_state))
 
         best_env = None
         best_total = None
