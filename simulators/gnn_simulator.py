@@ -10,11 +10,10 @@ __email__   = "hedi.boukamcha.1@ulaval.ca; anas.neumann@polymtl.ca"
 __version__ = "2.0.0" 
 __license__ = "MIT"
 
-
 def simulate(previous_state: State, d: Decision, clone: bool=False) -> State:
     state: State      = previous_state.clone() if clone else previous_state
     
-    #validate_state_consistency(state, context=f"AVANT décision {d}")
+    # validate_state_consistency(state, context=f"AVANT décision {d}")
     
     j: JobState       = state.get_job_by_id(d.job_id)
     o: OperationState = j.operation_states[d.operation_id]
@@ -37,8 +36,7 @@ def simulate(previous_state: State, d: Decision, clone: bool=False) -> State:
             f"target_job_ready_time={target_job_ready_time}, "
             f"current_station={j.current_station}, "
             f"status={j.status}, "
-            f"operation_id={d.operation_id}"
-        )
+            f"operation_id={d.operation_id}")
 
     # 3. Unload previous job if the target machine ain't free
     previous_job_back_to_station(state, robot, j, machine, M)
@@ -72,11 +70,9 @@ def simulate(previous_state: State, d: Decision, clone: bool=False) -> State:
 
     # 9. If the operation is the last of the job, we remove the job from the system
     if o.is_last:
-        #print(f"  o.is_last=True pour J{j.id+1}, robot.free_at={robot.free_at}")
         robot_move_job_to_station(state, robot, j, o, machine, M)
-        #print(f"  après robot_move_job_to_station, robot.free_at={robot.free_at}")
-        unloading_time_target = unload(state, j, o, L, unloading_start=robot.free_at)
-        #print(f"  après unload, robot.free_at={robot.free_at}")
+        # unloading_time_target = unload(state, j, o, L, unloading_start=robot.free_at) => removed before redondant
+        unloading_time_target = j.end # Added instead
     else:
         """if not parallel:
             robot_move_job_to_station(state, robot, j, o, machine, M)"""
@@ -91,7 +87,8 @@ def simulate(previous_state: State, d: Decision, clone: bool=False) -> State:
 
         last_op: OperationState = job_on_pos_to_unload.operation_states[-1]
         robot_move_job_to_station(state, robot, job_on_pos_to_unload, last_op, state.machine1, M)
-        unloading_time_pos_job = unload(state, job_on_pos_to_unload, last_op, L, unloading_start=robot.free_at) 
+        # unloading_time_pos_job = unload(state, job_on_pos_to_unload, last_op, L, unloading_start=robot.free_at) => removed before redondant
+        unloading_time_pos_job = job_on_pos_to_unload.end # Added instead
 
     state.compute_obj_values_and_upper_bounds(unloading_time=max(unloading_time_target, unloading_time_pos_job), current_time=robot.free_at)
     state.decisions.append(d)
@@ -305,15 +302,24 @@ def cancel_unloading_last_parallel_if_exist(state: State, needs_station_2: bool)
         return None, None
 
     j.calendar.events.pop()
-    j.calendar.events.pop()
+    if j.calendar.has_events() and j.calendar.get_last_event().event_type == MOVE:
+        j.calendar.events.pop()
 
     j.status = IN_SYSTEM
     j.location = state.machine1
     j.operation_states[-1].status = IN_EXECUTION
 
-    # Rollback de la station
-    j.current_station.calendar.events.pop()
-    j.current_station.calendar.events.pop()
+    # Rollback de la station (Conditional Safe-Pop)
+    if j.current_station.calendar.has_events():
+        last_event = j.current_station.calendar.get(-1)
+        if last_event.event_type == UNLOAD and last_event.job is not None and last_event.job.id == j.id:
+            j.current_station.calendar.events.pop()
+            
+    if j.current_station.calendar.has_events():
+        prev_event = j.current_station.calendar.get(-1)
+        if prev_event.event_type == AWAIT and prev_event.job is not None and prev_event.job.id == j.id:
+            j.current_station.calendar.events.pop()
+            
     j.current_station.current_job = j
 
     # Rollback du robot
@@ -547,7 +553,8 @@ def unload(state: State, j: JobState, o: OperationState, L: int, unloading_start
 def execute_operation(j: JobState, o: OperationState, robot: RobotState, machine: Machine, parallel: bool, time: int) -> int:
     #execution_time: int = o.operation.processing_time
     execution_time: int = o.remaining_time if o.status == IN_EXECUTION else o.operation.processing_time  # ← MODIFIER ICI
-    o.start             = time
+    if o.status != IN_EXECUTION: # Keep the original start time if already in execution
+        o.start = time
     if not parallel:
         robot.free_at   = time + execution_time
         robot.calendar.add(Event(start=time, end=(time + execution_time), event_type=HOLD, job=j, source=machine, dest=machine, operation=o, station=None))
@@ -859,20 +866,17 @@ def _cut_job_done(j: JobState, last_event):
 
 def _cut_job_in_execution(j: JobState, in_progress_event, new_state: State, cut_time: int):
     """Event en cours (EXECUTE/HOLD/POS/MOVE) → IN_EXECUTION."""
-    #print(f"  _cut_job_in_execution: J{j.id+1}, event={EVENT_NAMES[in_progress_event.event_type]}, op={in_progress_event.operation.id if in_progress_event.operation else None}, end={in_progress_event.end}")
     cloned_op = j.get_operation(in_progress_event.operation.id) if in_progress_event.operation else None
-    #print(f"  cloned_op={cloned_op}, status avant={cloned_op.status if cloned_op else None}")
     j.status   = IN_EXECUTION
     dest = in_progress_event.dest
     if dest is not None:
-        if dest.position_type == POS_MACHINE_1:
-            j.location = new_state.machine1
-        elif dest.position_type == POS_MACHINE_2:
-            j.location = new_state.machine2
-        else:
-            j.location = new_state.all_stations
+        if    dest.position_type == POS_MACHINE_1: j.location = new_state.machine1
+        elif  dest.position_type == POS_MACHINE_2: j.location = new_state.machine2
+        else: j.location         = new_state.all_stations
     if in_progress_event.event_type == MOVE:
-        new_state.robot.location = in_progress_event.dest
+        if   in_progress_event.dest.position_type == POS_MACHINE_1: new_state.robot.location = new_state.machine1
+        elif in_progress_event.dest.position_type == POS_MACHINE_2: new_state.robot.location = new_state.machine2
+        else: new_state.robot.location             = new_state.all_stations
         j.status = IN_SYSTEM
     original_op = in_progress_event.operation
     if original_op is not None and in_progress_event.event_type in {EXECUTE, HOLD}:
@@ -883,7 +887,7 @@ def _cut_job_in_execution(j: JobState, in_progress_event, new_state: State, cut_
             cloned_op.remaining_time = max(0, in_progress_event.end - cut_time)
 
             # On garde seulement la partie encore en cours après cut_time
-            cloned_op.start = cut_time
+            # cloned_op.start = cut_time ==> Keep the original start time for consistency
             cloned_op.end = in_progress_event.end
 
             # Après le cut, le job n'est pas encore terminé
@@ -907,6 +911,8 @@ def _cut_job_in_execution(j: JobState, in_progress_event, new_state: State, cut_
         if cloned_op is not None:
             cloned_op.status         = NOT_YET
             cloned_op.remaining_time = cloned_op.operation.processing_time
+            cloned_op.start          = 0  # Rollback start and end times for POS events
+            cloned_op.end            = 0
             j.status                 = IN_SYSTEM
             for o in j.operation_states:
                 if o.id < cloned_op.id:
@@ -918,8 +924,8 @@ def _cut_job_in_execution(j: JobState, in_progress_event, new_state: State, cut_
                 elif o.id > cloned_op.id:
                     o.remaining_time = o.operation.processing_time
                     o.status = NOT_YET
-                    o.start = 0
-                    o.end = 0
+                    o.start  = 0
+                    o.end    = 0
     else:
         # MOVE en cours → ops selon leur état réel
         for o in j.operation_states:
@@ -929,7 +935,8 @@ def _cut_job_in_execution(j: JobState, in_progress_event, new_state: State, cut_
             else:
                 o.remaining_time = o.operation.processing_time
                 o.status         = NOT_YET
-
+                o.start          = 0  # Rollback start and end times for POS events
+                o.end            = 0 
 
 def _cut_job_in_system(j: JobState, last_event, cut_time: int):
     """
@@ -986,8 +993,6 @@ def _clean_robot_obsolete_events(new_state: State, cut_time: int):
         new_state.robot.free_at  = new_state.robot.calendar.events[-1].end
         new_state.robot.location = new_state.robot.calendar.events[-1].dest
 
-
-
 def build_state_from_cut(state: State, cut_time: int) -> State:
     new_state: State = state.clone()
     _cut_robot(new_state, cut_time)
@@ -997,7 +1002,6 @@ def build_state_from_cut(state: State, cut_time: int) -> State:
         _cut_station(station, new_state, cut_time)
     for j in new_state.job_states:
         _cut_job(j, state.get_job_by_id(j.id), new_state, cut_time)
-    
     _clean_robot_obsolete_events(new_state, cut_time)  
     _fix_robot_held_job(new_state, cut_time)            
     _sync_state_after_cut(new_state, cut_time)
