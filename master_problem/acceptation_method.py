@@ -212,36 +212,33 @@ def _greedy_rollout(cut_state: State, start_time: int, agent: Agent, device: str
                             clone=True)
     return env
 
-def evaluate_subset(state: State, subset: list[Job], new_jobs: list[Job], cut_time: int, nb_existing: int, agent: Agent, device: str, all_weights: dict, gantt_dir: str | None = None) -> tuple[float, float, float, int]:
-    """
-    Reschedule le pool existant + le sous-ensemble S en deux branches :
-      - immediate : re-cédulation dès cut_time (les nouveaux peuvent passer avant les existants) ;
-      - delayed  : re-cédulation à la fin de l'opération en cours, où existants et nouveaux
-        sont simultanément actionnables et le GNN arbitre librement selon ses Q-valeurs.
-    La meilleure branche (coût pondéré total, puis cmax) est retenue.
-    Retourne cost_existants, cost_nouveaux, total_cost, cmax.
-    """
-    if gantt_dir is not None:
-        os.makedirs(gantt_dir, exist_ok=True)
-        existing_gantt_path = os.path.join(gantt_dir, f"existing_only_cut_{cut_time}.png")
-        gnn_gantt(
-            existing_gantt_path,
-            state,
-            f"Existing jobs only | cut={cut_time}",
-            cut_times=[cut_time])
-        print(f"    📊 Gantt saved in: {existing_gantt_path}")
-    cut_state = build_state_from_cut(state, cut_time)
+def evaluate_subset(base_cut_state: State, 
+                    base_wait_state: State | None, 
+                    wait_time: int | None, 
+                    subset: list[Job], 
+                    new_jobs: list[Job], 
+                    cut_time: int, 
+                    nb_existing: int, 
+                    agent: Agent, 
+                    device: str, 
+                    all_weights: dict, 
+                    gantt_dir: str | None = None) -> tuple[float, float, float, int]:
+    
+    # 1. Clone the pre-computed cut state and inject jobs
+    cut_state = base_cut_state.clone()
     cut_state.add_jobs_to_state(subset)
-    wait_time = _find_wait_time(cut_state, cut_time)
 
     branches     = []
     robot_locked = cut_state.robot.free_at > cut_time
     m1_locked    = cut_state.machine1.free_at > cut_time
     m2_locked    = cut_state.machine2.free_at > cut_time
+    
     if not (robot_locked and m1_locked and m2_locked):
         branches.append(("immediate", cut_time, cut_state))
-    if wait_time is not None and wait_time > cut_time:
-        wait_state = build_state_from_cut(state, wait_time)
+        
+    # 2. Clone the pre-computed wait state (if it exists) and inject jobs
+    if base_wait_state is not None and wait_time is not None:
+        wait_state = base_wait_state.clone()
         wait_state.add_jobs_to_state(subset)
         branches.append(("delayed", wait_time, wait_state))
 
@@ -335,11 +332,30 @@ def bfs_bidirectional(state: State, new_jobs: list[Job], cut_time: int, agent: A
     def contains_pruned(key) -> bool:
         return any(pk.issubset(key) for pk in pruned_keys)
 
+    base_cut_state = build_state_from_cut(state, cut_time)
+    wait_time      = _find_wait_time(base_cut_state, cut_time)
+    
+    if wait_time is not None and wait_time > cut_time:
+        base_wait_state = build_state_from_cut(state, wait_time)
+    else:
+        base_wait_state = None
+
     def evaluate(subset):
         nonlocal n_evaluated
         n_evaluated += 1
-        return evaluate_subset(state, subset, new_jobs, cut_time, nb_existing, agent, device, all_weights, gantt_dir=gantt_dir)
-
+        return evaluate_subset(
+            base_cut_state, 
+            base_wait_state, 
+            wait_time, 
+            subset, 
+            new_jobs, 
+            cut_time, 
+            nb_existing, 
+            agent, 
+            device, 
+            all_weights, 
+            gantt_dir=gantt_dir
+        )
     best_subset, best_cost, best_cmax = [], cost_ref, cmax_ref
 
     forward_level = [[job] for job in new_jobs]
