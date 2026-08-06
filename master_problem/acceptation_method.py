@@ -8,7 +8,7 @@ from models.order import OrderInstance
 from models.state import State, JobState
 from models.instance import Job
 from models.agent import Agent
-from simulators.gnn_simulator import build_state_from_cut, display_cut_snapshot, validate_cut_state
+from simulators.gnn_simulator import build_state_from_cut
 from models.environment import Environment
 from gnn_solver import search_possible_decisions, take_one_step
 from conf import *
@@ -321,8 +321,6 @@ def evaluate_subset(state: State, subset: list[Job], new_jobs: list[Job], cut_ti
         print(f"    📊 Gantt existants sauvegardé : {existing_gantt_path}")
 
     cut_state = build_state_from_cut(state, cut_time)
-    #display_cut_snapshot(cut_state, cut_time)
-    #validate_cut_state(cut_state, cut_time)
 
     cut_state.add_jobs_to_state(subset)
     wait_time = _find_wait_time(cut_state, cut_time)
