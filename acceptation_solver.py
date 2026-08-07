@@ -443,7 +443,7 @@ def run_all_controlled_instances(
 
 
 # RUN: by insatnces with multiple value of delta
-# python acceptation_solver.py --mode all --root_dir "data/controlled_orders_ub/test/s" --output_root "results/controlled_orders/test" --deltas 0.1 0.2 --device mps --agent_path "data/training_costs_ub/" --generate_gantts true
+# python acceptation_solver.py --mode all --root_dir "data/controlled_orders_ub/test/s" --output_root "results/controlled_orders/test" --deltas 0.1 0.5 --device mps --agent_path "data/training_costs_ub/" --generate_gantts true
 # python acceptation_solver.py --mode all --root_dir "data/controlled_orders_ub/test/m" --output_root "results/controlled_orders/test" --deltas 0.1 0.2 --device mps --agent_path "data/training_costs_ub/" --generate_gantts true
 
 
