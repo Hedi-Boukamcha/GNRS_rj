@@ -254,24 +254,19 @@ def evaluate_subset(base_cut_state: State,
         b_cost_e = sum(all_weights[id(j.job)] * j.delay for j in b_existing)
         b_cost_n = sum(all_weights[id(j.job)] * j.delay for j in b_new)
         b_total = b_cost_e + b_cost_n
-        print(
-            f"    branche {branch_name} (start={start_time}): "
-            f"cost_existants={b_cost_e:.4f} | cost_nouveaux={b_cost_n:.4f} | "
-            f"total={b_total:.4f} | cmax={b_env.state.cmax}"
-        )
+        print(f"    branche {branch_name} (start={start_time}): "
+              f"cost_existants={b_cost_e:.4f} | cost_nouveaux={b_cost_n:.4f} | "
+              f"total={b_total:.4f} | cmax={b_env.state.cmax}")
         if best_env is None or (b_total, b_env.state.cmax) < (best_costs[2], best_env.state.cmax):
             best_env = b_env
             best_costs = (b_cost_e, b_cost_n, b_total)
 
     if best_env is None:
-        print_state_calendars(
-            cut_state,
-            title=f"| subset={subset_name(subset, new_jobs)} | cut={cut_time} | ECHEC"
-        )
+        print_state_calendars(cut_state, title=f"| subset={subset_name(subset, new_jobs)} | cut={cut_time} | ECHEC")
         return float("inf"), float("inf"), float("inf"), float("inf")
 
-    env = best_env
-    existing_jobs = env.state.job_states[:nb_existing]
+    env             = best_env
+    existing_jobs   = env.state.job_states[:nb_existing]
     new_jobs_states = env.state.job_states[nb_existing:]
     cost_existants, cost_nouveaux, total_cost = best_costs
 
@@ -287,26 +282,16 @@ def evaluate_subset(base_cut_state: State,
     
     if gantt_dir is not None:
         os.makedirs(gantt_dir, exist_ok=True)
-        s_name = subset_name(subset, new_jobs)
-
+        s_name     = subset_name(subset, new_jobs)
         gantt_path = os.path.join(
             gantt_dir,
-            f"subset_{s_name}_cut_{cut_time}_cmax_{env.state.cmax}_costE_{int(cost_existants)}.png"
-        )
-
+            f"subset_{s_name}_cut_{cut_time}_cmax_{env.state.cmax}_costE_{int(cost_existants)}.png")
         gnn_gantt(
             gantt_path,
             env.state,
             f"Subset {s_name} | cut={cut_time} | costE={cost_existants:.2f} | cmax={env.state.cmax}",
-            cut_times=[cut_time]
-        )
-
+            cut_times=[cut_time])
         print(f"    📊 Gantt subset sauvegardé : {gantt_path}")
-
-    """print_state_calendars(
-        env.state,
-        title=f"| subset={subset_name(subset, new_jobs)} | cut={cut_time} | cmax={env.state.cmax}"
-    )"""
     return cost_existants, cost_nouveaux, total_cost, env.state.cmax
 
 # Forward et backward tournent ensemble, niveau par niveau, en partageant les
