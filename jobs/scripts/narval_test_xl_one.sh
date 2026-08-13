@@ -25,7 +25,7 @@
 #SBATCH --account=def-adhaj          # <-- A REMPLACER par ton compte RAC (def-xxx ou rrg-xxx)
 #SBATCH --job-name=gnrs-xl-test
 #SBATCH --gpus-per-node=1
-#SBATCH --cpus-per-task=128
+#SBATCH --cpus-per-task=64
 #SBATCH --mem=128G
 #SBATCH --time=24:00:00
 #SBATCH --output=logs/%x-%j.out
