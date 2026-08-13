@@ -47,7 +47,7 @@ GENERATE_GANTTS="true"
 module purge
 module load StdEnv/2023 python/3.11 cuda/12.2
 
-source "$HOME/envs/gnrs_rj/bin/activate"
+source /home/hedibk/gnrs_rj/bin/activate
 
 cd "$SLURM_SUBMIT_DIR"
 
