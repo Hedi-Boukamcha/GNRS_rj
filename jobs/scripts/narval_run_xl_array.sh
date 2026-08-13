@@ -36,8 +36,8 @@
 #SBATCH --job-name=gnrs-xl
 #SBATCH --array=0-8
 #SBATCH --gpus-per-node=1
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=64G
+#SBATCH --cpus-per-task=64
+#SBATCH --mem=128G
 #SBATCH --time=48:00:00
 #SBATCH --output=logs/%x-%A_%a.out
 #SBATCH --error=logs/%x-%A_%a.err
@@ -66,7 +66,7 @@ GENERATE_GANTTS="true"
 module purge
 module load StdEnv/2023 python/3.11 cuda/12.2
 
-source "$HOME/envs/gnrs_rj/bin/activate"
+source /home/hedibk/envs/gnrs_rj/bin/activate
 
 cd "$SLURM_SUBMIT_DIR"
 
