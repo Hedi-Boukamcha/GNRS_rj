@@ -367,8 +367,8 @@ class State:
                         remaining_time_m2,                            # 2. remaining time in machine 2
                         machine_1_is_first,                           # 3. machine 1 before machine 2?
                         float(j.job.pos_time),                        # 4. Time to place the job on the poisitioner
-                        float(current_time - j.job.due_date),         # 5. Remaining time before due date (negative if already late)
-                        float(j.job.due_date - current_time),         # 6. Time since due date (negative if not yet due)
+                        float(current_time - j.job.due_date),         # 5. Time since due date (negative if not yet due)
+                        float(j.job.due_date - current_time),         # 6. Remaining time before due date (negative if already late)
                         cs1,                                          # 7. Is it loaded in station 1?
                         cs2,                                          # 8. Is it loaded in station 2?
                         cs3,                                          # 9. Is it loaded in station 3?
