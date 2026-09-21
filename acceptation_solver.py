@@ -449,10 +449,10 @@ def run_all_controlled_instances(
 
 
 # s
-# python3 acceptation_solver.py --mode all --root_dir "data/controlled_orders_ub/test/s" --output_root "results/controlled_orders/test" --deltas 0.1 0.2 0.5 --device cpu --agent_path "data/training_costs_ub/" --generate_gantts false
+# python3 acceptation_solver.py --mode all --root_dir "data/controlled_orders_ub/test/s" --output_root "results/controlled_orders/test" --deltas 0.1 0.2 0.5 --device cpu --agent_path "data/training_costs_ub/" --generate_gantts true
 
 # m
-# python3 acceptation_solver.py --mode all --root_dir "data/controlled_orders_ub/test/m" --output_root "results/controlled_orders/test" --deltas 0.1 0.2 0.5 --device cpu --agent_path "data/training_costs_ub/" --generate_gantts false
+# python3 acceptation_solver.py --mode all --root_dir "data/controlled_orders_ub/test/m" --output_root "results/controlled_orders/test" --deltas 0.1 0.2 0.5 --device cpu --agent_path "data/training_costs_ub/" --generate_gantts true
 
 # l
 # python3 acceptation_solver.py --mode all --root_dir "data/controlled_orders_ub/test/l" --output_root "results/controlled_orders/test" --deltas 0.1 0.2 0.5 --device cpu --agent_path "data/training_costs_ub/" --generate_gantts false
