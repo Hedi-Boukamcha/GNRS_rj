@@ -352,8 +352,23 @@ def cancel_unloading_last_parallel_if_exist(state: State, needs_station_2: bool)
 
 def previous_job_back_to_station(state: State, robot: RobotState, j: JobState, machine: Machine, M: int):
     if machine.calendar.has_events():
-        previous_job: JobState = machine.calendar.get(-1).job
-        previous_event_op: OperationState = machine.calendar.get(-1).operation
+        # BUG FIX (spurious extra robot moves in subset-test rollouts): get(-1) assumes the
+        # last-APPENDED calendar event always belongs to the job currently occupying the
+        # machine. That only holds for simple 2-job interleavings; once several jobs share
+        # Machine 1 in parallel (e.g. new candidate jobs injected after a cut_time), the
+        # last-appended event can belong to a job that has already left, so the robot was sent
+        # to "free"/fetch the wrong job -> extra illogical move/pos segments. Fix: search
+        # backward for the most recent event whose job is still physically located at this
+        # machine (and isn't j itself).
+        # previous_job: JobState = machine.calendar.get(-1).job  # OLD
+        # previous_event_op: OperationState = machine.calendar.get(-1).operation  # OLD
+        previous_job: JobState = None  # NEW
+        previous_event_op: OperationState = None  # NEW
+        for e in reversed(machine.calendar.events):  # NEW
+            if e.job is not None and e.job.id != j.id and e.job.location is machine:  # NEW
+                previous_job = e.job  # NEW
+                previous_event_op = e.operation  # NEW
+                break  # NEW
 
         if previous_event_op is None:
             return
@@ -485,23 +500,40 @@ def robot_move_job_to_station(state: State, robot: RobotState, j: JobState, o: O
     return time
 
 def free_positioner(state: State, robot: RobotState, M: int, current_job: int):
-    if state.machine1.calendar.len() >= 2:
-        previous_last_event: Event = state.machine1.calendar.get(-2)
-        j: JobState                = previous_last_event.job
-        o: OperationState          = previous_last_event.operation
-        if current_job != j.id and previous_last_event.event_type == POS and j.location == state.machine1:
-            if robot.location != state.machine1:
-                robot.calendar.add(Event(start=robot.free_at, end=(robot.free_at + M), event_type=MOVE, job=j, source=robot.location, dest=state.machine1, operation=o, station=j.current_station))
-                robot.free_at += M
-            time            = max(robot.free_at, state.machine1.free_at, o.end)
-            robot.calendar.add(Event(start=time, end=(time + M), event_type=MOVE, job=j, source=state.machine1, dest=state.all_stations, operation=o, station=j.current_station))
-            j.calendar.add(Event(start=time, end=(time + M), event_type=MOVE, job=j, source=state.machine1, dest=state.all_stations, operation=o, station=j.current_station))
-            time           += M
-            robot.location  = state.all_stations
-            j.location      = state.all_stations
-            robot.free_at   = time
+    # BUG FIX (spurious extra robot moves in subset-test rollouts): get(-2) assumed the job
+    # left parked on the positioner is always exactly two slots back in Machine 1's calendar.
+    # That only holds for a strict 2-job "position, then execute" alternation; with 3+ jobs
+    # interleaving on Machine 1 (e.g. new candidate jobs injected after a cut_time), the
+    # second-to-last event no longer reliably points at the parked job, so the robot was sent
+    # to fetch/free the wrong job -> extra illogical move/pos segments. Fix: search backward
+    # for the most recent POS event whose job isn't current_job and is still parked at
+    # machine1 (hasn't left yet).
+    # if state.machine1.calendar.len() >= 2:  # OLD
+    #     previous_last_event: Event = state.machine1.calendar.get(-2)  # OLD
+    #     j: JobState                = previous_last_event.job  # OLD
+    #     o: OperationState          = previous_last_event.operation  # OLD
+    #     if current_job != j.id and previous_last_event.event_type == POS and j.location == state.machine1:  # OLD
+    previous_last_event: Event = None  # NEW
+    for e in reversed(state.machine1.calendar.events):  # NEW
+        if (e.event_type == POS and e.job is not None  # NEW
+                and e.job.id != current_job and e.job.location is state.machine1):  # NEW
+            previous_last_event = e  # NEW
+            break  # NEW
+    if previous_last_event is not None:  # NEW (job/POS/location already verified by the search above)
+        j: JobState                = previous_last_event.job  # NEW
+        o: OperationState          = previous_last_event.operation  # NEW
+        if robot.location != state.machine1:
+            robot.calendar.add(Event(start=robot.free_at, end=(robot.free_at + M), event_type=MOVE, job=j, source=robot.location, dest=state.machine1, operation=o, station=j.current_station))
+            robot.free_at += M
+        time            = max(robot.free_at, state.machine1.free_at, o.end)
+        robot.calendar.add(Event(start=time, end=(time + M), event_type=MOVE, job=j, source=state.machine1, dest=state.all_stations, operation=o, station=j.current_station))
+        j.calendar.add(Event(start=time, end=(time + M), event_type=MOVE, job=j, source=state.machine1, dest=state.all_stations, operation=o, station=j.current_station))
+        time           += M
+        robot.location  = state.all_stations
+        j.location      = state.all_stations
+        robot.free_at   = time
 
-            finalize_after_machine_to_station(state, j, o, time)
+        finalize_after_machine_to_station(state, j, o, time)
 
 
 def unload(state: State, j: JobState, o: OperationState, L: int, unloading_start: int) ->int:
@@ -660,7 +692,19 @@ def _cut_filter(events, cut_time, keep_in_progress=True):
     return [e for e in events if e.end <= cut_time]
 
 def _cut_robot(new_state: State, cut_time: int):
-    new_state.robot.calendar.events = [e for e in new_state.robot.calendar.events if e.end <= cut_time or (e.start < cut_time and e.end > cut_time)]
+    # BUG FIX (spurious duplicate move+unload for a job the robot already released, e.g.
+    # instance_19_middle order 2 cut=107 -> wait_time=148 landing exactly on J1's move-off
+    # boundary [148->151]): this filter used a STRICT "e.start < cut_time" for the straddle
+    # check, unlike every other cut filter in this file (_cut_filter, _cut_machine, etc.) which
+    # use "<=". When a robot MOVE event starts exactly AT cut_time (the boundary case), this
+    # dropped it entirely instead of keeping it (it doesn't satisfy "end<=cut_time" either,
+    # since it ends after). The robot's calendar then still ended on the earlier HOLD event for
+    # that job, so robot_move_to_job (simulate() step 5, called for an unrelated later decision)
+    # saw "robot's last event is a HOLD it never let go of" and re-triggered
+    # robot_move_job_to_station for that job a second time -- producing a second, later
+    # move+unload pair that overwrote the job's correct (earlier) unload with a wrong, later one.
+    # events = [e for e in ... if e.end<=cut_time or (e.start<cut_time and e.end>cut_time)]  # OLD
+    new_state.robot.calendar.events = [e for e in new_state.robot.calendar.events if e.end <= cut_time or (e.start <= cut_time and e.end > cut_time)]  # NEW
     new_state.robot.free_at  = new_state.robot.calendar.events[-1].end if new_state.robot.calendar.events else 0
     new_state.robot.location = new_state.robot.calendar.events[-1].dest if new_state.robot.calendar.events else new_state.all_stations
 
@@ -775,6 +819,136 @@ def _fix_robot_held_job(new_state: State, cut_time: int):
     else:
         new_state.robot.current_job = None
 
+# BUG FIX (missing UNLOAD after cut_time, e.g. instance_19_middle order 2 cut=107): companion
+# to _fix_robot_held_job. When a job's LAST operation is executing on Machine 1 in PARALLEL
+# mode at cut_time, the robot is free (that is the whole point of parallel mode -- it lets the
+# robot hold a *different* job elsewhere at the same time), so there is no robot HOLD event for
+# this job and _fix_robot_held_job never looks at it. The future MOVE(machine->station)+UNLOAD
+# tail that the original (pre-cut) decision would have produced is silently dropped by
+# _cut_filter (it only keeps events ending <= cut_time or straddling it, discarding anything
+# that only starts after cut_time), and nothing else re-triggers it post-cut:
+# search_possible_decisions just flips the operation's status to DONE for bookkeeping once the
+# rollout clock passes its real end, with no side effect. Net result: j.end/j.delay never get
+# sealed and the job's UNLOAD is missing from the reconstructed schedule, corrupting
+# costE/cmax used for the order-acceptance decision.
+# NOTE: unlike _fix_robot_held_job, this does NOT write to robot.calendar/robot.free_at -- at
+# cut_time the robot may be busy holding a *different* job, and fabricating a robot commitment
+# here could collide with whatever it is really doing (the exact bug we fixed elsewhere). It DOES
+# read robot.free_at (updated by _fix_robot_held_job, which runs first) as a lower bound for when
+# the robot could plausibly come fetch this job -- using op.end alone assumed the robot is free
+# the instant the weld finishes, which is wrong whenever it is still busy elsewhere (e.g. holding
+# a different job), and produced a synthesized MOVE/UNLOAD dated far too early, which cascaded
+# into a wrong wait_time in _find_wait_time and a wrong reconstruction at that wait_time.
+def _fix_parallel_m1_job_finishing(new_state: State, cut_time: int):  # NEW
+    for j in new_state.job_states:  # NEW
+        if not j.calendar.has_events():  # NEW
+            continue  # NEW
+        last_event = j.calendar.get_last_event()  # NEW
+
+        # Case 1: last event is a still-relevant EXECUTE on Machine 1 in parallel mode (robot
+        # free) -- synthesize both the MOVE off the machine and the UNLOAD.
+        # BUG FIX: also catch a job whose last EXECUTE already finished by cut_time (not just
+        # straddling it) -- that is exactly the "done processing, not yet collected" case
+        # _cut_job now routes through _cut_job_in_system instead of prematurely sealing it via
+        # _cut_job_done. op.end is correct either way (real future end if still straddling,
+        # real past end if already over), and move_start=max(op.end, robot.free_at) below
+        # handles both uniformly.
+        # if last_event.event_type != EXECUTE or last_event.end <= cut_time: continue  # OLD
+        if last_event.event_type == EXECUTE and last_event.dest is new_state.machine1:  # NEW
+            op = j.get_operation(last_event.operation.id) if last_event.operation else None  # NEW
+            # if op is None or not op.is_last or op.status != IN_EXECUTION: continue  # OLD
+            if op is None or not op.is_last:  # NEW
+                continue  # NEW
+            decision = next(  # NEW
+                (d for d in new_state.decisions if d.job_id == j.id and d.operation_id == op.id),  # NEW
+                None  # NEW
+            )  # NEW
+            if decision is None or not decision.parallel:  # NEW
+                continue  # sequential M1 execution -> robot holds it, _fix_robot_held_job covers it  # NEW
+
+            # BUG FIX (move shown on the wrong Gantt row): a robot MOVE always belongs on
+            # robot.calendar (that's what gnn_gantt.py's "Robot" row reads from) and,
+            # symmetrically, on j.calendar -- never on machine.calendar (the real
+            # robot_move_job_to_station never touches it either; only machine.free_at is
+            # updated to reflect the machine becoming free). The old version appended this
+            # synthesized move to machine1.calendar, so it rendered on the "Machine 1" row
+            # instead of "Robot".
+            # BUG FIX (missing first leg): robot_move_to_job's real behavior is TWO moves when
+            # the robot isn't already at the machine -- (1) an empty "travel to the machine"
+            # move from wherever the robot currently is, THEN (2) the "carry the job to the
+            # station" move. The old version only synthesized (2), silently assuming the robot
+            # was already standing at machine1.
+            robot   = new_state.robot  # NEW
+            machine = new_state.machine1  # NEW
+            station = j.current_station  # NEW
+
+            # if robot.location is not machine: ...  # OLD: this leg didn't exist at all
+            if robot.location is not machine:  # NEW: leg 1 -- robot travels to the machine, empty-handed
+                t1_start = robot.free_at  # NEW
+                t1_end   = t1_start + new_state.M  # NEW
+                robot.calendar.events.append(Event(start=t1_start, end=t1_end, event_type=MOVE, job=j,  # NEW
+                                                    source=robot.location, dest=machine, operation=op, station=station))  # NEW
+                robot.location = machine  # NEW
+                robot.free_at  = t1_end  # NEW
+
+            # move_start = op.end  # OLD: assumed the robot is free the instant the weld ends
+            move_start = max(op.end, robot.free_at)  # NEW: robot may still be busy elsewhere
+            move_end   = move_start + new_state.M  # NEW
+
+            # j.calendar.events.append(...)  # OLD (same event, kept)
+            # machine.calendar.events.append(...)  # OLD: wrong calendar, replaced by robot.calendar below
+            j.calendar.events.append(Event(start=move_start, end=move_end, event_type=MOVE, job=j,  # NEW
+                                            source=machine, dest=new_state.all_stations, operation=op, station=station))  # NEW
+            robot.calendar.events.append(Event(start=move_start, end=move_end, event_type=MOVE, job=j,  # NEW
+                                                source=machine, dest=new_state.all_stations, operation=op, station=station))  # NEW
+            machine.free_at = max(machine.free_at, move_end)  # NEW
+            robot.location  = new_state.all_stations  # NEW
+            robot.free_at   = move_end  # NEW
+            unload_start    = move_end  # NEW
+
+        # Case 2 (BUG FIX, e.g. instance_19_middle J1 once _cut_robot's boundary bug was fixed):
+        # last event is a MOVE already heading to a station (dest=all_stations) -- e.g. a
+        # robot-held job whose HOLD ends exactly AT cut_time/wait_time, so _fix_robot_held_job's
+        # strict "> cut_time" check doesn't treat it as still-held, but the robot's actual
+        # departure move WAS correctly preserved by _cut_robot/_cut_job (it straddles cut_time).
+        # The move itself needs no synthesis (it's already in both calendars), just the UNLOAD
+        # that was supposed to follow it once the job arrives -- nothing else ever adds it.
+        elif last_event.event_type == MOVE and last_event.dest is new_state.all_stations:  # NEW
+            op = j.get_operation(last_event.operation.id) if last_event.operation else None  # NEW
+            if op is None or not op.is_last or op.remaining_time > 0:  # NEW
+                continue  # only a job whose last op has finished processing  # NEW
+            already_unloaded = any(e.event_type == UNLOAD for e in j.calendar.events)  # NEW
+            if already_unloaded:  # NEW
+                continue  # NEW
+            station = j.current_station  # NEW
+            unload_start = max(last_event.end, new_state.robot.free_at)  # NEW
+
+        else:  # NEW
+            continue  # NEW
+
+        unload_end = unload_start + new_state.L  # NEW
+        if station and station.calendar.has_events():  # NEW
+            last_station_end = station.calendar.events[-1].end  # NEW
+            if last_station_end < unload_start:  # NEW
+                station.calendar.events.append(Event(start=last_station_end, end=unload_start, event_type=AWAIT, job=j,  # NEW
+                                                       source=new_state.all_stations, dest=new_state.all_stations, operation=op, station=station))  # NEW
+
+        j.calendar.events.append(Event(start=unload_start, end=unload_end, event_type=UNLOAD, job=j,  # NEW
+                                        source=new_state.all_stations, dest=new_state.all_stations, operation=op, station=station))  # NEW
+        if station:  # NEW
+            station.calendar.events.append(Event(start=unload_start, end=unload_end, event_type=UNLOAD, job=j,  # NEW
+                                                   source=new_state.all_stations, dest=new_state.all_stations, operation=op, station=station))  # NEW
+            station.free_at     = unload_end  # NEW
+            station.current_job = None  # NEW
+
+        j.status   = DONE  # NEW
+        j.end      = unload_end  # NEW
+        j.delay    = max(0, unload_end - j.job.due_date)  # NEW
+        j.location = None  # NEW
+
+        op.status         = DONE  # NEW
+        op.remaining_time = 0  # NEW
+
 def _sync_state_after_cut(new_state: State, cut_time: int):
     """
     Une station reste réservée par son job tant que le job n'est pas DONE,
@@ -810,12 +984,29 @@ def _sync_state_after_cut(new_state: State, cut_time: int):
             station.free_at = max(station.free_at, cut_time)
 
 def _cut_machine(machine, cut_time: int):
-    machine.calendar.events = [e for e in machine.calendar.events 
+    machine.calendar.events = [e for e in machine.calendar.events
                                 if e.end <= cut_time or (e.start <= cut_time and e.end > cut_time)]
-    machine.free_at = machine.calendar.events[-1].end if machine.calendar.events else 0
+    # BUG FIX (cut-time overlap on Machine 1): events[-1] is the last-APPENDED event, not
+    # necessarily the one that ends latest. In parallel mode a POS event for job B can be
+    # appended after a still-running EXECUTE event for job A, so "last appended" underestimates
+    # free_at -> a newly (re)offered job can be scheduled to start before the machine is really
+    # free, producing overlapping welds after the cut. Fix: take the true max end instead.
+    # machine.free_at = machine.calendar.events[-1].end if machine.calendar.events else 0  # OLD
+    machine.free_at = max((e.end for e in machine.calendar.events), default=0)  # NEW
 
 
 def _cut_station(station, new_state: State, cut_time: int):
+    # BUG FIX (missing UNLOAD in reconstructed gantt, e.g. instance_19_middle order 2 cut=107
+    # -> wait_time=131 landing exactly on J2's unload boundary [131->133]): only AWAIT events
+    # straddling cut_time were kept (truncated to cut_time); any other in-progress event type
+    # (LOAD/UNLOAD) straddling cut_time was silently dropped. That desynced the station's
+    # calendar from the job's own calendar (_cut_job/_cut_filter DOES keep a straddling
+    # event of any type, whole) -- the job's UNLOAD stayed in j.calendar but vanished from the
+    # station's calendar, so the gantt (which reads station calendars) never showed it. Fix:
+    # for a straddling event that is not AWAIT, keep it whole (like _cut_job/_cut_machine/
+    # _cut_robot already do for their own straddling events) instead of dropping it -- a
+    # LOAD/UNLOAD is a short, already-committed physical action, not something that can be
+    # meaningfully truncated mid-way the way an AWAIT (idle wait) can.
     new_events = []
     for e in station.calendar.events:
         if e.end <= cut_time:
@@ -832,6 +1023,9 @@ def _cut_station(station, new_state: State, cut_time: int):
                 operation=e.operation,
                 station=e.station
             ))
+        # elif e.start <= cut_time < e.end: pass  # OLD (silently dropped, e.g. a straddling UNLOAD)
+        elif e.start <= cut_time < e.end:  # NEW
+            new_events.append(e)  # NEW: keep any other straddling event (e.g. LOAD/UNLOAD) whole
     station.calendar.events = new_events
     station.free_at = station.calendar.events[-1].end if station.calendar.events else 0
     last_load = next((e for e in reversed(station.calendar.events) if e.event_type == LOAD), None)
@@ -975,20 +1169,34 @@ def _cut_job(j: JobState, original_job: JobState, new_state: State, cut_time: in
         if last_event.event_type == UNLOAD:
             _cut_job_done(j, last_event)
         else:
-            # vérifier si toutes les ops sont DONE
-            all_done = all(o.end > 0 and o.end <= cut_time for o in j.operation_states)
-            if all_done:
-                _cut_job_done(j, last_event)
-            else:
-                _cut_job_in_system(j, last_event, cut_time)
+            # BUG FIX (missing UNLOAD in reconstructed gantt / wrong j.end-delay, e.g.
+            # instance_19_middle order 2): "all operations finished processing by cut_time"
+            # does NOT mean the job has actually been picked up and unloaded -- only a real
+            # UNLOAD event proves that. This can happen for a job that finished its last op on
+            # Machine 1 in parallel mode (robot free) while the robot was still busy elsewhere
+            # (e.g. holding a different job) -- the machine is done, but nobody has come to
+            # collect the part yet. Calling _cut_job_done here sealed j.end/j.status using
+            # last_event.end (the EXECUTE's end), silently discarding whatever extra delay
+            # accrues while the job sits finished-but-uncollected. Route it through
+            # _cut_job_in_system instead (like any job still physically in the system) --
+            # _fix_parallel_m1_job_finishing (called later, once robot.free_at is settled by
+            # _fix_robot_held_job) then synthesizes the real MOVE+UNLOAD tail for it.
+            # all_done = all(o.end > 0 and o.end <= cut_time for o in j.operation_states)  # OLD
+            # if all_done:  # OLD
+            #     _cut_job_done(j, last_event)  # OLD
+            # else:  # OLD
+            #     _cut_job_in_system(j, last_event, cut_time)  # OLD
+            _cut_job_in_system(j, last_event, cut_time)  # NEW
 
 
 def _clean_robot_obsolete_events(new_state: State, cut_time: int):
     """Garder seulement les events terminés + en cours + move de retour ajouté."""
+    # BUG FIX: same strict "<" boundary issue as _cut_robot -- see the comment there.
+    # events = [... if e.end<=cut_time or (e.start<cut_time and e.end>cut_time) or ...]  # OLD
     new_state.robot.calendar.events = [
         e for e in new_state.robot.calendar.events
-        if e.end <= cut_time or (e.start < cut_time and e.end > cut_time) or e.start == new_state.robot.free_at - new_state.M
-    ]
+        if e.end <= cut_time or (e.start <= cut_time and e.end > cut_time) or e.start == new_state.robot.free_at - new_state.M
+    ]  # NEW
     if new_state.robot.calendar.events:
         new_state.robot.free_at  = new_state.robot.calendar.events[-1].end
         new_state.robot.location = new_state.robot.calendar.events[-1].dest
@@ -1002,8 +1210,9 @@ def build_state_from_cut(state: State, cut_time: int) -> State:
         _cut_station(station, new_state, cut_time)
     for j in new_state.job_states:
         _cut_job(j, state.get_job_by_id(j.id), new_state, cut_time)
-    _clean_robot_obsolete_events(new_state, cut_time)  
-    _fix_robot_held_job(new_state, cut_time)            
+    _clean_robot_obsolete_events(new_state, cut_time)
+    _fix_robot_held_job(new_state, cut_time)
+    _fix_parallel_m1_job_finishing(new_state, cut_time)  # NEW: seal missing UNLOAD for a job finishing its last op in parallel M1 mode at cut_time
     _sync_state_after_cut(new_state, cut_time)
     return new_state
 

@@ -192,6 +192,20 @@ def _find_wait_time(cut_state: State, cut_time: int) -> int | None:
                     if last_event and last_event.end > cut_time:
                         ends.append(last_event.end)
                 break
+    # BUG FIX: build_state_from_cut's fix functions (_fix_robot_held_job, and the new
+    # _fix_parallel_m1_job_finishing) synthesize the missing MOVE+UNLOAD tail for a job whose
+    # last operation was still in flight at cut_time, and as part of that they seal the job's
+    # status straight to DONE (that is the whole point -- its cost/delay must be final). Once
+    # that happens, the job-status loop above no longer sees it as IN_EXECUTION, so a subset
+    # where *every* in-flight job happened to be one of these "already sealed" cases returned
+    # wait_time=None even though the robot/machines are still genuinely busy past cut_time
+    # (their free_at says so) -- this silently made both the "immediate" and "delayed" branches
+    # unavailable in evaluate_subset, i.e. every subset looked infeasible. Fix: also fall back to
+    # each resource's own free_at, which stays correct regardless of job-status bookkeeping.
+    # ends = [...]  # OLD (job-status only)
+    for _free_at in (cut_state.robot.free_at, cut_state.machine1.free_at, cut_state.machine2.free_at):  # NEW
+        if _free_at > cut_time:  # NEW
+            ends.append(_free_at)  # NEW
     return min(ends) if ends else None
 
 def _greedy_rollout(cut_state: State, start_time: int, agent: Agent, device: str) -> Environment | None:
@@ -235,7 +249,7 @@ def evaluate_subset(base_cut_state: State,
     
     if not (robot_locked and m1_locked and m2_locked):
         branches.append(("immediate", cut_time, cut_state))
-        
+
     # 2. Clone the pre-computed wait state (if it exists) and inject jobs
     if base_wait_state is not None and wait_time is not None:
         wait_state = base_wait_state.clone()

@@ -541,9 +541,20 @@ class Machine1(Machine):
         self.position_type: int = POS_MACHINE_1
         
     def clone(self) -> 'Machine1':
+        # BUG FIX (root cause of the Machine 1 overlap bug): free_at was never copied here, so
+        # every State.clone() (called constantly -- at the start of every evaluate_subset branch,
+        # and inside every take_one_step(clone=True) during a rollout) silently reset Machine 1's
+        # free_at back to 0, even though the calendar events (and the correct free_at just computed
+        # by _cut_machine) were preserved. Any later robot_move_to_machine/free_positioner call
+        # that relies on machine.free_at as a lower bound then ignored a job still physically
+        # executing on the machine, letting a new job's weld start before it, i.e. two jobs
+        # executing on Machine 1 at once. RobotState.clone()/StationState.clone() already copy
+        # free_at correctly -- this was an isolated oversight in Machine1/Machine2 only.
         p1: Machine1     = Machine1()
         p1.pos_is_full   = self.pos_is_full
         p1.position_type = self.position_type
+        # p1.free_at not copied  # OLD (implicit bug: stayed at Machine1()'s default of 0)
+        p1.free_at       = self.free_at  # NEW
         return p1
 
     def clone_calendar_and_current_job(self, new_state: 'State'):
@@ -557,8 +568,11 @@ class Machine2(Machine):
         self.position_type: int = POS_MACHINE_2
 
     def clone(self) -> 'Machine2':
+        # BUG FIX: same missing free_at copy as Machine1.clone() -- see the comment there.
         p2: Machine2     = Machine2()
         p2.position_type = self.position_type
+        # p2.free_at not copied  # OLD (implicit bug: stayed at Machine2()'s default of 0)
+        p2.free_at       = self.free_at  # NEW
         return p2
     
     def clone_calendar_and_current_job(self, new_state: 'State'):
