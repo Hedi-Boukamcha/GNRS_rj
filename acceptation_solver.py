@@ -447,6 +447,16 @@ def run_all_controlled_instances(
 # python acceptation_solver.py --mode all --root_dir "data/controlled_orders_ub/test/m" --output_root "results/controlled_orders/test" --deltas 0.1 0.2 --device mps --agent_path "data/training_costs_ub/" --generate_gantts true
 
 
+
+# s
+# python3 acceptation_solver.py --mode all --root_dir "data/controlled_orders_ub/test/s" --output_root "results/controlled_orders/test" --deltas 0.1 0.2 0.5 --device cpu --agent_path "data/training_costs_ub/" --generate_gantts false
+
+# m
+# python3 acceptation_solver.py --mode all --root_dir "data/controlled_orders_ub/test/m" --output_root "results/controlled_orders/test" --deltas 0.1 0.2 0.5 --device cpu --agent_path "data/training_costs_ub/" --generate_gantts false
+
+# l
+# python3 acceptation_solver.py --mode all --root_dir "data/controlled_orders_ub/test/l" --output_root "results/controlled_orders/test" --deltas 0.1 0.2 0.5 --device cpu --agent_path "data/training_costs_ub/" --generate_gantts false
+
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()

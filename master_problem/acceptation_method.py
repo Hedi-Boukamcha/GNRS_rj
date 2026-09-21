@@ -463,7 +463,8 @@ def save_acceptation_analysis_csv(
     csv_path: str,
     existing_jobs_final,
     accepted_new_jobs_final,
-    reference_completion_times: dict
+    reference_completion_times: dict,
+    cmax: int | None = None  # NEW: so Cmax is visible directly in the per-job table, not just in summary.csv
 ):
     import os
     import csv
@@ -480,19 +481,34 @@ def save_acceptation_analysis_csv(
     with open(csv_path, mode="w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
 
-        writer.writerow([
+        # ADDED: "cost", "Cj_initial"/"Cj_final" (per-job completion time) and
+        # "Tj_final_pondere" (weighted delay) columns, per user request -- for each example,
+        # clearly show each job's own Cj (not just its tardiness), both the individual AND
+        # weighted delay, and the schedule's total Cmax repositioned right before "dj". Cmax is
+        # repeated on every row (same value for the whole schedule) rather than as a separate
+        # header line, so the file stays a single flat table any spreadsheet/pandas tool can
+        # read directly.
+        # writer.writerow(["Pool","job","Cmax","cost","Tj_initial","Tj_final","Tj_final_pondere","Diff_Tj","dj","(Tj-dj)/dj","((Tj_final)-(Tj_initial))/(Tj_initial)"])  # OLD
+        writer.writerow([  # NEW
             "Pool",
             "job",
+            "cost",
+            "Cj_initial",
+            "Cj_final",
+            "Diff_Cj",
             "Tj_initial",
             "Tj_final",
+            "Tj_final_pondere",
             "Diff_Tj",
+            "Cmax",
             "dj",
-            "(Tj-dj)/dj",
-            "((Tj_final)-(Tj_initial))/(Tj_initial)"
+            # "(Tj-dj)/dj",
+            # "((Tj_final)-(Tj_initial))/(Tj_initial)"
         ])
 
         for j in existing_jobs_final:
             dj = j.job.due_date
+            poids = j.job.cost  # NEW
 
             # Cj dans la cédule de référence, avant acceptation
             Cj_ref = reference_completion_times.get(id(j.job), None)
@@ -506,9 +522,15 @@ def save_acceptation_analysis_csv(
 
             # Cj après acceptation / insertion des nouveaux jobs
             Cj_final = j.end
+            diff_Cj = (  # NEW
+                Cj_final - Cj_ref
+                if Cj_ref is not None
+                else None
+            )
 
             # Retard final après acceptation
             Tj_final = max(0, Cj_final - dj)
+            Tj_final_pondere = poids * Tj_final  # NEW
 
             diff_Tj = (
                 Tj_final - Tj_initial
@@ -516,53 +538,53 @@ def save_acceptation_analysis_csv(
                 else None
             )
 
-            ratio_due = (
-                Tj_final - dj / dj
-                if dj != 0
-                else None
-            )
-
-            ratio_Tj = (
-                diff_Tj / Tj_initial
-                if Tj_initial is not None and Tj_initial != 0
-                else None
-            )
-
-            writer.writerow([
+            # ratio_due/ratio_Tj kept as comments: "(Tj-dj)/dj" and "((Tj_final)-(Tj_initial))/(Tj_initial)" are no longer displayed, per user request
+            # ratio_due = (Tj_final - dj / dj) if dj != 0 else None  # OLD
+            # ratio_Tj = (diff_Tj / Tj_initial) if Tj_initial is not None and Tj_initial != 0 else None  # OLD
+            # writer.writerow(["Existants", f"J{j.id+1}", r2(Tj_initial), r2(Tj_final), r2(diff_Tj), r2(dj), r2(ratio_due), r2(ratio_Tj), ""])  # OLD (also had a stray trailing empty column not matching the header count)
+            writer.writerow([  # NEW
                 "Existants",
                 f"J{j.id + 1}",
+                r2(poids),
+                r2(Cj_ref),
+                r2(Cj_final),
+                r2(diff_Cj),
                 r2(Tj_initial),
                 r2(Tj_final),
+                r2(Tj_final_pondere),
                 r2(diff_Tj),
-                r2(dj),
-                r2(ratio_due),
-                r2(ratio_Tj),
-                ""
+                cmax if cmax is not None else "",
+                r2(dj)
+                # r2(ratio_due),  # OLD
+                # r2(ratio_Tj)    # OLD
             ])
 
         for j in accepted_new_jobs_final:
             dj = j.job.due_date
+            poids = j.job.cost  # NEW
 
             Cj_new = j.end
             Tj_new = max(0, Cj_new - dj)
+            Tj_new_pondere = poids * Tj_new  # NEW
 
-            ratio_due = (
-                Tj_new / dj
-                if dj != 0
-                else None
-            )
-
-            writer.writerow([
+            # ratio_due = (Tj_new / dj) if dj != 0 else None  # OLD
+            # writer.writerow(["Nouveaux acceptés", f"J{j.id+1}", "", r2(Tj_new), "", r2(dj), r2(ratio_due), "", ""])  # OLD
+            writer.writerow([  # NEW
                 "Nouveaux acceptés",
                 f"J{j.id + 1}",
-                "",              # Tj_initial : pas applicable pour les nouveaux
-                r2(Tj_new),       # Tj_final
-                "",              # Diff_Tj : pas applicable
-                r2(dj),
-                r2(ratio_due),
-                "",              # Ratio_diff_Tj_initial : pas applicable
-                ""
-            ])         
+                r2(poids),
+                "",                     # Cj_initial : pas applicable pour les nouveaux (pas dans la cédule de référence)
+                r2(Cj_new),             # Cj_final
+                "",                     # Diff_Cj : pas applicable
+                "",                     # Tj_initial : pas applicable pour les nouveaux
+                r2(Tj_new),             # Tj_final
+                r2(Tj_new_pondere),     # Tj_final_pondere
+                "",                     # Diff_Tj : pas applicable
+                cmax if cmax is not None else "",
+                r2(dj)
+                # r2(ratio_due),  # OLD
+                # ""               # ((Tj_final)-(Tj_initial))/(Tj_initial) : pas applicable  # OLD
+            ])
    
 def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str, delta_ratio: float = 0.2, gantt_dir: str | None = None, save_step_gantts: bool = False, analysis_dir: str | None = None) -> State:
     """
@@ -686,7 +708,8 @@ def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str,
                     csv_path=csv_path,
                     existing_jobs_final=env.state.job_states,
                     accepted_new_jobs_final=[],
-                    reference_completion_times=reference_completion_times
+                    reference_completion_times=reference_completion_times,
+                    cmax=env.state.cmax  # NEW
                 )
 
                 print(f"  📄 Tableau analyse sauvegardé : {csv_path}")
@@ -770,7 +793,8 @@ def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str,
                 csv_path=csv_path,
                 existing_jobs_final=existing_jobs_final,
                 accepted_new_jobs_final=accepted_jobs_final,
-                reference_completion_times=reference_completion_times
+                reference_completion_times=reference_completion_times,
+                cmax=env.state.cmax  # NEW
             )
             print(f"  📄 Tableau analyse sauvegardé : {csv_path}")
 
