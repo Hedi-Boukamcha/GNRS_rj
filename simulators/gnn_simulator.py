@@ -101,7 +101,14 @@ def search_start_time(state: State, j: JobState, d: Decision, forbidden_station:
     start_time: int = 0
 
     # D'abord respecter la chronologie du job
-    if d.operation_id > 0 and j.calendar.has_events():
+    # BUG FIX (MOVE commencé en plein LOAD après le cut, ex. s/portion_of_3_7/instance_9_early
+    # ordre 2, cut=31 : LOAD de J1 30-32 en cours au cut, le MOVE vers M1 partait à 31 au lieu de 32).
+    # La condition "operation_id > 0" ignorait le calendrier du job pour la 1re opération : hors cut
+    # c'est sans effet (le job n'a pas d'événement avant son LOAD), mais après un cut le job peut déjà
+    # avoir un LOAD en cours (location = stations, donc pas de rechargement) et sa fin était oubliée ;
+    # le MOVE ne dépendait plus que de robot.free_at / machine.free_at (bornés à cut_time).
+    # if d.operation_id > 0 and j.calendar.has_events():  # OLD
+    if j.calendar.has_events():  # NEW : toujours attendre la fin du dernier événement du job
         start_time = max(start_time, j.calendar.get_last_event().end)
     o: OperationState = j.operation_states[d.operation_id]
     if o.status == IN_EXECUTION and j.calendar.has_events():
@@ -215,7 +222,16 @@ def get_loading_time_and_force_unloading_previous(state: State, j: JobState, sta
         else 0
     )
 
-    unloading_start = max(last_job_event_end, station.free_at)
+    # BUG FIX (déchargement compté deux fois, ex. s/portion_of_3_7/instance_7_early, order 1) :
+    # quand l'opération non finale d'un job se termine, simulate_station_min_free_at met
+    # station.free_at à une ESTIMATION = fin + M (retour) + L (déchargement). Si un autre job force
+    # ensuite le retour de ce job, le vrai MOVE est simulé ci-dessus ; prendre max(fin du move,
+    # free_at) faisait commencer le déchargement à l'estimation, qui inclut déjà L -> déchargement
+    # retardé de L (J2 : move 51-54, unload 56-58 au lieu de 54-56). Fix : on se base sur les
+    # événements réels de la station et sur la borne du cut (cut_floor), pas sur l'estimation.
+    # unloading_start = max(last_job_event_end, station.free_at)  # OLD
+    last_station_event_end = station.calendar.events[-1].end if station.calendar.has_events() else 0  # NEW
+    unloading_start = max(last_job_event_end, last_station_event_end, getattr(station, "cut_floor", 0))  # NEW
 
     prev_unload_time: int = unload(state, current_job, last_op, state.L, unloading_start=unloading_start)
 
@@ -517,6 +533,15 @@ def free_positioner(state: State, robot: RobotState, M: int, current_job: int):
     for e in reversed(state.machine1.calendar.events):  # NEW
         if (e.event_type == POS and e.job is not None  # NEW
                 and e.job.id != current_job and e.job.location is state.machine1):  # NEW
+            # BUG FIX (opération jamais exécutée, ex. s/portion_of_3_7/instance_12_early, branche
+            # différée cut=44) : un POS commencé avant le cut est gardé, mais l'opération elle-même est
+            # remise à NOT_YET (elle sera redécidée après le cut). Si une décision M2 non parallèle
+            # arrivait avant, on « libérait » ce job comme s'il avait déjà été soudé : retour station,
+            # déchargement et op marquée DONE sans EXECUTE. Un job positionné dont l'opération n'a pas
+            # commencé attend sa soudure : on ne le libère pas.
+            parked_op = e.job.operation_states[e.operation.id] if e.operation is not None else None  # NEW
+            if parked_op is not None and parked_op.status == NOT_YET and parked_op.remaining_time > 0:  # NEW
+                break  # NEW : le job garé le plus récent n'est pas encore soudé -> rien à libérer
             previous_last_event = e  # NEW
             break  # NEW
     if previous_last_event is not None:  # NEW (job/POS/location already verified by the search above)
@@ -549,6 +574,11 @@ def unload(state: State, j: JobState, o: OperationState, L: int, unloading_start
     )
 
     if already_unloaded is not None:
+        # NEW (défensif) : le job a déjà été déchargé pour cette op -> il n'occupe plus la station.
+        # Avant, on retournait sans libérer la station, ce qui laissait current_job/location incohérents.
+        if j.current_station is not None and j.current_station.current_job is j:
+            j.current_station.current_job = None
+        j.location = None
         return already_unloaded.end
     s: StationState      = j.current_station
     unloading_end: int   = unloading_start + L
@@ -982,6 +1012,18 @@ def _sync_state_after_cut(new_state: State, cut_time: int):
             station = job.current_station
             station.current_job = job
             station.free_at = max(station.free_at, cut_time)
+            station.cut_floor = max(getattr(station, "cut_floor", 0), cut_time)  # NEW: borne réelle pour le déchargement forcé
+
+    # BUG FIX (décisions cédulées AVANT le cut, ex. m/portion_of_3_7/instance_10_middle cut=29) :
+    # une ressource inactive au cut gardait free_at = fin de son dernier événement (0 pour un robot
+    # ou une machine jamais utilisés), si bien que le rollout pouvait placer une opération dans le
+    # passé (J2 exécuté 3-13 sur M2 alors que le cut est à 29). Rien ne peut commencer avant le cut :
+    # on borne robot, machines et stations à cut_time.
+    new_state.robot.free_at    = max(new_state.robot.free_at, cut_time)  # NEW
+    new_state.machine1.free_at = max(new_state.machine1.free_at, cut_time)  # NEW
+    new_state.machine2.free_at = max(new_state.machine2.free_at, cut_time)  # NEW
+    for station in new_state.all_stations.stations:  # NEW
+        station.free_at = max(station.free_at, cut_time)  # NEW
 
 def _cut_machine(machine, cut_time: int):
     machine.calendar.events = [e for e in machine.calendar.events
@@ -1036,6 +1078,7 @@ def _cut_station(station, new_state: State, cut_time: int):
         station.current_job = None
     if station.current_job is not None:
         station.free_at = max(station.free_at, cut_time)
+        station.cut_floor = max(getattr(station, "cut_floor", 0), cut_time)  # NEW: borne réelle pour le déchargement forcé
 
 def _cut_job_not_yet(j: JobState):
     """Job sans aucun event → NOT_YET."""
@@ -1057,6 +1100,35 @@ def _cut_job_done(j: JobState, last_event):
     for o in j.operation_states:
         o.remaining_time = 0
         o.status         = DONE
+
+def _has_remaining_ops_at(j: JobState, cut_time: int) -> bool:  # NEW
+    """Vrai si au moins une opération du job n'est pas terminée à cut_time (dates du planning d'origine)."""
+    return any(not (o.end > 0 and o.end <= cut_time) for o in j.operation_states)
+
+def _cut_job_unloaded_between_ops(j: JobState, cut_time: int):  # NEW
+    """
+    BUG FIX (déchargement INTERMÉDIAIRE au cut, ex. s/portion_of_3_7/instance_7_early, branche
+    différée cut=54 : J2 déchargé 54-56 pour libérer la grande station à J1, puis rechargé plus tard
+    pour son op2). Avant : un UNLOAD terminé au cut scellait le job DONE (op2 comptée faite alors
+    qu'il restait 55 de soudure), et un UNLOAD en cours au cut laissait le job IN_EXECUTION sur la
+    station (J2 jamais rechargé et présent sur la station en même temps que J1).
+    Maintenant : même état que celui laissé par unload() pour une op non finale -- le job est hors
+    du système (location None, NOT_YET) et sera rechargé ; ops terminées gardées, les autres annulées.
+    Le job n'est réutilisable qu'à la fin de l'UNLOAD (dernier événement de son calendrier).
+    """
+    j.status   = NOT_YET
+    j.location = None
+    j.end      = 0
+    j.delay    = 0
+    for o in j.operation_states:
+        if o.end > 0 and o.end <= cut_time:
+            o.remaining_time = 0
+            o.status         = DONE
+        else:
+            o.remaining_time = o.operation.processing_time
+            o.status         = NOT_YET
+            o.start          = 0
+            o.end            = 0
 
 def _cut_job_in_execution(j: JobState, in_progress_event, new_state: State, cut_time: int):
     """Event en cours (EXECUTE/HOLD/POS/MOVE) → IN_EXECUTION."""
@@ -1155,6 +1227,51 @@ def _cut_job_in_system(j: JobState, last_event, cut_time: int):
             o.start = 0
             o.end = 0
 
+def _cut_job_final_return(j: JobState, original_job: JobState, move_event, new_state: State):  # NEW
+    """
+    BUG FIX (UNLOAD final manquant, ex. s/portion_of_7_3/instance_4_middle, branche différée
+    wait_time=174 : J4 finit o2 (sa dernière op) à 174, MOVE M1->S2 174-177 en cours au cut, UNLOAD
+    177-179 perdu ; S2 était libérée sans déchargement et J1 y était chargé à 177).
+    Le MOVE de retour final et l'UNLOAD sont indissociables (finalize_after_machine_to_station
+    décharge toujours à la fin du MOVE). _cut_filter gardait le MOVE en cours mais jetait l'UNLOAD
+    qui commence après le cut ; le job passait ensuite par _cut_job_in_execution (IN_SYSTEM, toutes
+    ses ops finies) et _sync_state_after_cut libérait sa station (is_done()) sans UNLOAD.
+    Fix : comme pour un UNLOAD en cours, le retour final commencé est engagé -> on garde l'UNLOAD
+    d'origine (ou on le recrée à la fin du MOVE), on l'ajoute à la station, et le job est scellé DONE.
+    """
+    unload_ev = next((e for e in original_job.calendar.events
+                      if e.event_type == UNLOAD and e.start >= move_event.end), None)
+    L = new_state.L
+    u_start = unload_ev.start if unload_ev is not None else move_event.end
+    u_end   = unload_ev.end if unload_ev is not None else move_event.end + L
+    last_op = j.operation_states[-1]
+    station = None
+    st_ref  = unload_ev.station if unload_ev is not None and unload_ev.station is not None else move_event.station
+    if st_ref is not None:
+        station = next((st for st in new_state.all_stations.stations if st.id == st_ref.id), None)
+    if station is None:
+        last_load = next((e for e in reversed(j.calendar.events) if e.event_type == LOAD and e.station is not None), None)
+        if last_load is not None:
+            station = next((st for st in new_state.all_stations.stations if st.id == last_load.station.id), None)
+    ev = Event(start=u_start, end=u_end, event_type=UNLOAD, job=j, source=new_state.all_stations,
+               dest=new_state.all_stations, operation=last_op, station=station)
+    j.calendar.events.append(ev)
+    if station is not None:
+        last_end = station.calendar.events[-1].end if station.calendar.events else u_start
+        if last_end < u_start:
+            station.calendar.events.append(Event(start=last_end, end=u_start, event_type=AWAIT, job=j,
+                                                 source=new_state.all_stations, dest=new_state.all_stations,
+                                                 operation=last_op, station=station))
+        station.calendar.events.append(Event(start=u_start, end=u_end, event_type=UNLOAD, job=j,
+                                             source=new_state.all_stations, dest=new_state.all_stations,
+                                             operation=last_op, station=station))
+        station.free_at     = max(station.free_at, u_end)
+        station.current_job = None
+        j.current_station   = station
+    _cut_job_done(j, ev)
+    new_state.robot.location = new_state.all_stations
+
+
 def _cut_job(j: JobState, original_job: JobState, new_state: State, cut_time: int):
     """Reconstruit l'état d'un job au cut_time."""
     j.calendar.events     = _cut_filter(j.calendar.events, cut_time, keep_in_progress=True)
@@ -1162,11 +1279,27 @@ def _cut_job(j: JobState, original_job: JobState, new_state: State, cut_time: in
 
     if not j.calendar.events and in_progress_event is None:
         _cut_job_not_yet(j)
+    # elif in_progress_event is not None:  # OLD (un UNLOAD en cours laissait le job IN_EXECUTION sur la station)
+    #     _cut_job_in_execution(j, in_progress_event, new_state, cut_time)  # OLD
+    elif in_progress_event is not None and in_progress_event.event_type == UNLOAD:  # NEW
+        # un UNLOAD commencé est une action engagée (gardée entière dans les calendriers)
+        if _has_remaining_ops_at(j, cut_time):  # NEW : déchargement intermédiaire -> à recharger
+            _cut_job_unloaded_between_ops(j, cut_time)  # NEW
+        else:  # NEW : déchargement final -> job terminé à la fin de l'UNLOAD
+            _cut_job_done(j, in_progress_event)  # NEW
+    elif (in_progress_event is not None and in_progress_event.event_type == MOVE  # NEW
+          and in_progress_event.dest is not None and in_progress_event.dest.position_type == POS_STATION  # NEW
+          and not _has_remaining_ops_at(j, cut_time)):  # NEW
+        _cut_job_final_return(j, original_job, in_progress_event, new_state)  # NEW
     elif in_progress_event is not None:
         _cut_job_in_execution(j, in_progress_event, new_state, cut_time)
     else:
         last_event = j.calendar.events[-1]
-        if last_event.event_type == UNLOAD:
+        # if last_event.event_type == UNLOAD:  # OLD (scellait DONE même après un déchargement intermédiaire)
+        #     _cut_job_done(j, last_event)  # OLD
+        if last_event.event_type == UNLOAD and _has_remaining_ops_at(j, cut_time):  # NEW
+            _cut_job_unloaded_between_ops(j, cut_time)  # NEW
+        elif last_event.event_type == UNLOAD:
             _cut_job_done(j, last_event)
         else:
             # BUG FIX (missing UNLOAD in reconstructed gantt / wrong j.end-delay, e.g.
@@ -1187,6 +1320,17 @@ def _cut_job(j: JobState, original_job: JobState, new_state: State, cut_time: in
             # else:  # OLD
             #     _cut_job_in_system(j, last_event, cut_time)  # OLD
             _cut_job_in_system(j, last_event, cut_time)  # NEW
+
+    # BUG FIX (mauvaise station après le cut, ex. s/portion_of_7_3/instance_14_early cut=77) :
+    # j est un clone de l'état FINAL de la cédule, donc j.current_station est la station où le job
+    # se trouve à la fin (J1 : rechargé sur S1 à 152), pas celle où il est au cut (J1 sur S2 depuis 39).
+    # Résultat : S2 paraissait libre, J4 y était chargé pendant que J1 y était encore, et J1 était
+    # plus tard déchargé de S1 pendant que J5 l'occupait. Fix : un job encore dans le système au cut
+    # est rattaché à la station de son dernier LOAD commencé avant ou au cut.
+    if j.location is not None:  # NEW
+        last_load = next((e for e in reversed(j.calendar.events) if e.event_type == LOAD and e.station is not None), None)  # NEW
+        if last_load is not None:  # NEW
+            j.current_station = next((st for st in new_state.all_stations.stations if st.id == last_load.station.id), j.current_station)  # NEW
 
 
 def _clean_robot_obsolete_events(new_state: State, cut_time: int):

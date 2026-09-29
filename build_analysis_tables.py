@@ -14,9 +14,14 @@ __version__ = "1.0.0"
 __license__ = "MIT"
 
 REPO_ROOT     = Path(__file__).resolve().parent
-ANALYSIS_ROOT = REPO_ROOT / "analysis"
-OUTPUT_DIR    = ANALYSIS_ROOT / "results_by_size"
-CSV_DIR       = OUTPUT_DIR / "csv"
+# Deux dossiers d'analyse traités à chaque lancement :
+#   - analysis/                : ancienne version (GNN glouton, acceptation_solver.py)
+#   - analysis_complete_agent/ : nouvelle version (complete agent, acceptation_solver_complete_agent.py)
+# Chaque dossier reçoit ses propres tables dans <dossier>/results_by_size/csv/.
+ANALYSIS_ROOTS = [
+    REPO_ROOT / "analysis",
+    REPO_ROOT / "analysis_complete_agent",
+]
 UB_ROOT       = REPO_ROOT / "data" / "controlled_orders_ub" / "test"
 
 CUT_TIME_ORDER = ["early", "middle", "late"]
@@ -94,9 +99,9 @@ def weighted_sum_delta_tjE(order2_csv: Path, job_costs: dict[str, float]) -> flo
     return weighted.sum() if not weighted.isna().all() else None
 
 
-def build_master_table() -> pd.DataFrame:
+def build_master_table(analysis_root: Path) -> pd.DataFrame:
     rows = []
-    for summary_csv in ANALYSIS_ROOT.glob("*/delta_*/*/instance_*/summary.csv"):
+    for summary_csv in analysis_root.glob("*/delta_*/*/instance_*/summary.csv"):
         parsed = parse_summary_path(summary_csv)
         if parsed is None:
             print(f"[WARN] skipped (unexpected path shape): {summary_csv}")
@@ -115,7 +120,7 @@ def build_master_table() -> pd.DataFrame:
         rows.append(row)
 
     if not rows:
-        raise RuntimeError(f"No summary.csv files found under {ANALYSIS_ROOT}")
+        raise RuntimeError(f"No summary.csv files found under {analysis_root}")
 
     master = pd.DataFrame(rows)
     master["cut_time_pos"] = pd.Categorical(master["cut_time_pos"], categories=CUT_TIME_ORDER, ordered=True)
@@ -127,16 +132,26 @@ def build_master_table() -> pd.DataFrame:
     return master.reset_index(drop=True)
 
 
-def write_tables_per_size_and_scenario(master: pd.DataFrame) -> None:
-    CSV_DIR.mkdir(parents=True, exist_ok=True)
+def write_tables_per_size_and_scenario(master: pd.DataFrame, csv_dir: Path) -> None:
+    csv_dir.mkdir(parents=True, exist_ok=True)
     for (size, cost_variant), df_group in master.groupby(["size", "cost_variant"], observed=True):
-        out_csv = CSV_DIR / f"results_{size}_{cost_variant}.csv"
+        out_csv = csv_dir / f"results_{size}_{cost_variant}.csv"
         df_group.to_csv(out_csv, index=False)
         print(f"[INFO] {out_csv} -> {len(df_group)} rows")
 
 # RUN: python3 build_analysis_tables.py
 if __name__ == "__main__":
-    master_df = build_master_table()
-    write_tables_per_size_and_scenario(master_df)
-    master_df.to_csv(CSV_DIR / "results_all_sizes.csv", index=False)
-    print(f"[INFO] {CSV_DIR / 'results_all_sizes.csv'} -> {len(master_df)} rows (all sizes combined)")
+    for analysis_root in ANALYSIS_ROOTS:
+        print(f"\n[INFO] ===== {analysis_root.name} =====")
+        if not analysis_root.exists():
+            print(f"[WARN] dossier absent, ignoré : {analysis_root}")
+            continue
+        try:
+            master_df = build_master_table(analysis_root)
+        except RuntimeError as e:
+            print(f"[WARN] {e} -> ignoré")
+            continue
+        csv_dir = analysis_root / "results_by_size" / "csv"
+        write_tables_per_size_and_scenario(master_df, csv_dir)
+        master_df.to_csv(csv_dir / "results_all_sizes.csv", index=False)
+        print(f"[INFO] {csv_dir / 'results_all_sizes.csv'} -> {len(master_df)} rows (all sizes combined)")

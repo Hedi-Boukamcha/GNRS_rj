@@ -218,12 +218,24 @@ def _greedy_rollout(cut_state: State, start_time: int, agent: Agent, device: str
     env = Environment(graph=graph, state=cut_state, n=len(cut_state.job_states), action_time=start_time)
     env.possible_decisions, env.decisionsT = search_possible_decisions(env=env, device=device)
     while env.possible_decisions:
-        action_id: int = agent.select_next_decision(graph=env.graph, decisionsT=env.decisionsT, greedy=True)
-        env = take_one_step(agent=agent,
-                            last_env=env,
-                            action_id=action_id,
-                            device=device,
-                            clone=True)
+        # action_id: int = agent.select_next_decision(graph=env.graph, decisionsT=env.decisionsT, greedy=True)  # OLD
+        # env = take_one_step(agent=agent, last_env=env, action_id=action_id, device=device, clone=True)      # OLD
+        # NEW : même choix glouton (meilleure valeur Q d'abord), mais si le simulateur juge la décision
+        # infaisable (RuntimeError, ex. « Impossible de libérer S2 » quand la station est tenue par un job
+        # en route vers sa machine au cut), on essaie l'action suivante au lieu de faire planter l'instance
+        # entière -- comme la cédulation de l'Order 1 le fait déjà.
+        q_values = agent.get_all_q_values(env.graph, env.decisionsT)
+        ranked   = sorted(range(len(env.possible_decisions)), key=lambda i: q_values[i].item(), reverse=True)
+        next_env = None
+        for action_id in ranked:
+            try:
+                next_env = take_one_step(agent=agent, last_env=env, action_id=action_id, device=device, clone=True)
+                break
+            except RuntimeError:
+                continue
+        if next_env is None:
+            return None  # aucune décision faisable
+        env = next_env
     return env
 
 def evaluate_subset(base_cut_state: State, 
@@ -498,8 +510,10 @@ def save_acceptation_analysis_csv(
             "Diff_Cj",
             "Tj_initial",
             "Tj_final",
-            "Tj_final_pondere",
             "Diff_Tj",
+            "Tj_initial_pondere",
+            "Tj_final_pondere",
+            "Diff_Tj_ponderee",
             "Cmax",
             "dj",
             # "(Tj-dj)/dj",
@@ -508,7 +522,7 @@ def save_acceptation_analysis_csv(
 
         for j in existing_jobs_final:
             dj = j.job.due_date
-            poids = j.job.cost  # NEW
+            cost = j.job.cost  # NEW
 
             # Cj dans la cédule de référence, avant acceptation
             Cj_ref = reference_completion_times.get(id(j.job), None)
@@ -530,11 +544,23 @@ def save_acceptation_analysis_csv(
 
             # Retard final après acceptation
             Tj_final = max(0, Cj_final - dj)
-            Tj_final_pondere = poids * Tj_final  # NEW
+            Tj_final_pondere = cost * Tj_final  # NEW
 
             diff_Tj = (
                 Tj_final - Tj_initial
                 if Tj_initial is not None
+                else None
+            )
+
+            # Diff_Tj_ponderee : version pondérée de Diff_Tj (NEW)
+            Tj_initial_pondere = (
+                cost * Tj_initial
+                if Tj_initial is not None
+                else None
+            )
+            diff_Tj_pondere = (
+                Tj_final_pondere - Tj_initial_pondere
+                if Tj_initial_pondere is not None
                 else None
             )
 
@@ -545,14 +571,16 @@ def save_acceptation_analysis_csv(
             writer.writerow([  # NEW
                 "Existants",
                 f"J{j.id + 1}",
-                r2(poids),
+                r2(cost),
                 r2(Cj_ref),
                 r2(Cj_final),
                 r2(diff_Cj),
                 r2(Tj_initial),
                 r2(Tj_final),
-                r2(Tj_final_pondere),
                 r2(diff_Tj),
+                r2(Tj_initial_pondere),
+                r2(Tj_final_pondere),
+                r2(diff_Tj_pondere),
                 cmax if cmax is not None else "",
                 r2(dj)
                 # r2(ratio_due),  # OLD
@@ -561,25 +589,27 @@ def save_acceptation_analysis_csv(
 
         for j in accepted_new_jobs_final:
             dj = j.job.due_date
-            poids = j.job.cost  # NEW
+            cost = j.job.cost  # NEW
 
             Cj_new = j.end
             Tj_new = max(0, Cj_new - dj)
-            Tj_new_pondere = poids * Tj_new  # NEW
+            Tj_new_pondere = cost * Tj_new  # NEW
 
             # ratio_due = (Tj_new / dj) if dj != 0 else None  # OLD
             # writer.writerow(["Nouveaux acceptés", f"J{j.id+1}", "", r2(Tj_new), "", r2(dj), r2(ratio_due), "", ""])  # OLD
             writer.writerow([  # NEW
                 "Nouveaux acceptés",
                 f"J{j.id + 1}",
-                r2(poids),
+                r2(cost),
                 "",                     # Cj_initial : pas applicable pour les nouveaux (pas dans la cédule de référence)
                 r2(Cj_new),             # Cj_final
                 "",                     # Diff_Cj : pas applicable
                 "",                     # Tj_initial : pas applicable pour les nouveaux
                 r2(Tj_new),             # Tj_final
-                r2(Tj_new_pondere),     # Tj_final_pondere
                 "",                     # Diff_Tj : pas applicable
+                "",                     # Tj_initial_pondere : pas applicable
+                r2(Tj_new_pondere),     # Tj_final_pondere
+                "",                     # Diff_Tj_ponderee : pas applicable
                 cmax if cmax is not None else "",
                 r2(dj)
                 # r2(ratio_due),  # OLD

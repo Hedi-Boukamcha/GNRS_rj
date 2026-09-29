@@ -512,12 +512,14 @@ class StationState:
         self.id: int                = id
         self.accept_big: bool       = big
         self.free_at: int           = 0
+        self.cut_floor: int         = 0     # borne réelle : un job encore présent au cut ne peut pas être déchargé avant le cut
         self.current_job: JobState  = None
         self.calendar: Calendar     = Calendar()
 
     def clone(self) -> 'StationState':
         s: StationState = StationState(self.id, self.accept_big)
         s.free_at       = self.free_at
+        s.cut_floor     = self.cut_floor
         s.accept_big    = self.accept_big
         return s
     
