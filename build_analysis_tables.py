@@ -21,6 +21,7 @@ REPO_ROOT     = Path(__file__).resolve().parent
 ANALYSIS_ROOTS = [
     REPO_ROOT / "analysis",
     REPO_ROOT / "analysis_complete_agent",
+    REPO_ROOT / "analysis_complete_agent_no_cmax",
 ]
 UB_ROOT       = REPO_ROOT / "data" / "controlled_orders_ub" / "test"
 

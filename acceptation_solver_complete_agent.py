@@ -38,7 +38,8 @@ def run_one_controlled_instance(
     generate_gantts: bool = True,
     use_beam: bool = True,
     improve: bool = True,
-    beam_width: int = BEAM_WIDTH
+    beam_width: int = BEAM_WIDTH,
+    analysis_root: str = ANALYSIS_ROOT  # NEW : dossier des analyses (avant : toujours ANALYSIS_ROOT)
 ):
     variant = os.path.splitext(os.path.basename(input_path))[0]
     delta_name = f"delta_{str(delta_ratio).replace('.', '_')}"
@@ -52,7 +53,8 @@ def run_one_controlled_instance(
     )
 
     analysis_dir = os.path.join(
-        ANALYSIS_ROOT,
+        # ANALYSIS_ROOT,  # OLD (codé en dur : un test avec d'autres poids écrasait les analyses existantes)
+        analysis_root,  # NEW
         scenario,
         delta_name,
         inst,
@@ -251,7 +253,8 @@ def run_all_controlled_instances(
     generate_gantts: bool = True,
     use_beam: bool = True,
     improve: bool = True,
-    beam_width: int = BEAM_WIDTH
+    beam_width: int = BEAM_WIDTH,
+    analysis_root: str = ANALYSIS_ROOT  # NEW
 ):
     """
     Lance la méthode d'acceptation sur toutes les instances contenues dans root_dir.
@@ -329,7 +332,8 @@ def run_all_controlled_instances(
                     generate_gantts=generate_gantts,
                     use_beam=use_beam,
                     improve=improve,
-                    beam_width=beam_width
+                    beam_width=beam_width,
+                    analysis_root=analysis_root  # NEW
                 )
 
             except Exception as e:
@@ -466,15 +470,19 @@ def run_all_controlled_instances(
 # python acceptation_solver.py --mode all --root_dir "data/controlled_orders_ub/test/m" --output_root "results/controlled_orders/test" --deltas 0.1 0.2 --device mps --agent_path "data/training_costs_ub/" --generate_gantts true
 
 # python3 acceptation_solver_complete_agent.py --mode one --input "data/controlled_orders_ub/test/s/portion_of_3_7/instance_9_early.json" --scenario s --inst portion_of_3_7 --delta_ratio 0.1 --device cpu --agent_path "data/training_costs_ub/" --output_root "results/controlled_orders_complete_agent/test" --generate_gantts true
-# python3 acceptation_solver_complete_agent.py --mode one --input "data/controlled_orders_ub/test/s/portion_of_7_3/instance_3_early.json" --scenario s --inst portion_of_7_3 --delta_ratio 0.1 --device cpu --agent_path "data/training_costs_ub/" --output_root "results/controlled_orders_complete_agent/test" --generate_gantts true
+# python3 acceptation_solver_complete_agent.py --mode one --input "data/controlled_orders_ub/test/s/portion_of_7_3/instance_3_early.json" --scenario s --inst portion_of_7_3 --delta_ratio 0.1 --device cpu --agent_path "data/training_ub_no_cmax/" --output_root "results/controlled_orders_complete_agent_no_cmax/test" --generate_gantts true
 # python3 acceptation_solver_complete_agent.py --mode one --input "data/controlled_orders_ub/test/s/portion_of_7_3/instance_4_middle.json" --scenario s --inst portion_of_7_3 --delta_ratio 0.1 --device cpu --agent_path "data/training_costs_ub/" --output_root "results/controlled_orders_complete_agent/test" --generate_gantts true
 # python3 acceptation_solver_complete_agent.py --mode one --input "data/controlled_orders_ub/test/s/portion_of_7_3/instance_8_early.json" --scenario s --inst portion_of_7_3 --delta_ratio 0.1 --device cpu --agent_path "data/training_costs_ub/" --output_root "results/controlled_orders_complete_agent/test" --generate_gantts true
 
 # COMPLETE AGENT (beam + recherche locale) :
 # python3 acceptation_solver_complete_agent.py --mode all --root_dir "data/controlled_orders_ub/test/s" --output_root "results/controlled_orders_complete_agent/test" --deltas 0.1 0.2 0.5 --device cpu --agent_path "data/training_costs_ub/" --generate_gantts true --beam true --improve true
 
+# s et m, agent réentraîné SANS Cmax dans la reward (poids data/training_ub_no_cmax/), analyses séparées :
+# python3 acceptation_solver_complete_agent.py --mode all --root_dir "data/controlled_orders_ub/test/s" --output_root "results/controlled_orders_complete_agent_no_cmax/test" --analysis_root "analysis_complete_agent_no_cmax" --deltas 0.1 0.2 0.5 --device cpu --agent_path "data/training_ub_no_cmax/" --generate_gantts true --beam true --improve true
+# python3 acceptation_solver_complete_agent.py --mode all --root_dir "data/controlled_orders_ub/test/m" --output_root "results/controlled_orders_complete_agent_no_cmax/test" --analysis_root "analysis_complete_agent_no_cmax" --deltas 0.1 0.2 0.5 --device cpu --agent_path "data/training_ub_no_cmax/" --generate_gantts true --beam true --improve true
+
 # s
-# python3 acceptation_solver.py --mode all --root_dir "data/controlled_orders_ub/test/s" --output_root "results/controlled_orders/test" --deltas 0.1 0.2 0.5 --device mps --agent_path "data/training_costs_ub/" --generate_gantts true
+# python3 acceptation_solver.py --mode all --root_dir "data/controlled_orders_ub/test/s" --output_root "results/controlled_orders/test" --deltas 0.1 0.2 0.5 --device cpu --agent_path "data/training_costs_ub/" --generate_gantts true
 # python3 acceptation_solver_complete_agent.py --mode all --root_dir "data/controlled_orders_ub/test/s" --output_root "results/controlled_orders_complete_agent/test" --deltas 0.1 0.2 0.5 --device cpu --agent_path "data/training_costs_ub/" --generate_gantts true --beam true --improve true
 
 # m
@@ -487,6 +495,10 @@ def run_all_controlled_instances(
 
 # une seule instance:
 # python3 acceptation_solver_complete_agent.py --mode one --input "data/controlled_orders_ub/test/s/same_costs/instance_13_early.json" --scenario s --inst same_costs --delta_ratio 0.1 --device cpu --agent_path "data/training_costs_ub/" --generate_gantts true --beam true --improve true
+
+
+# agent without cmax
+# python3 acceptation_solver_complete_agent.py --mode all --root_dir "data/controlled_orders_ub/test/s" --output_root "results/controlled_orders_complete_agent_no_cmax/test" --analysis_root "analysis_complete_agent_no_cmax" --deltas 0.1 0.2 0.5 --device cpu --agent_path "data/training_ub_no_cmax/" --generate_gantts true --beam true --improve true
 
 if __name__ == "__main__":
 
@@ -508,6 +520,7 @@ if __name__ == "__main__":
     parser.add_argument("--beam", type=str, choices=["true", "false"], default="true", help="Utiliser le beam search guidé par le GNN")
     parser.add_argument("--improve", type=str, choices=["true", "false"], default="true", help="Appliquer la recherche locale au cut sur les solutions terminées")
     parser.add_argument("--beam_width", type=int, default=BEAM_WIDTH, help="Largeur du beam")
+    parser.add_argument("--analysis_root", type=str, default=ANALYSIS_ROOT, help="Dossier racine des analyses (summary.csv, tableaux d'acceptation)")  # NEW
     parser.add_argument("--num_cpus", type=int, default=8, help="Nombre de CPU pour Ray (expansion du beam)")
     args = parser.parse_args()
     use_beam = args.beam.lower() == "true"
@@ -530,7 +543,8 @@ if __name__ == "__main__":
             generate_gantts=generate_gantts,
             use_beam=use_beam,
             improve=improve,
-            beam_width=args.beam_width
+            beam_width=args.beam_width,
+            analysis_root=args.analysis_root  # NEW
         ) 
     else:
         if args.input is None: raise ValueError("En mode one, tu dois fournir --input")
@@ -548,5 +562,6 @@ if __name__ == "__main__":
             generate_gantts=generate_gantts,
             use_beam=use_beam,
             improve=improve,
-            beam_width=args.beam_width
+            beam_width=args.beam_width,
+            analysis_root=args.analysis_root  # NEW
         )
