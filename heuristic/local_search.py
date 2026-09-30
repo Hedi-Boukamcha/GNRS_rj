@@ -13,8 +13,12 @@ __email__   = "hedi.boukamcha.1@ulaval.ca; anas.neumann@polymtl.ca"
 __version__ = "2.0.0"
 __license__ = "MIT"
 
-def ls(instance: Instance, decisions: list[Decision]):
-    state, obj   = _simulate_one(instance, decisions)
+# CHANGEMENT (reward sans Cmax) : option delay_first. Par défaut (False) le critère reste retard + Cmax,
+# donc l'heuristique de référence et la recherche tabou ne changent pas ; le solveur GNN passe
+# delay_first=True pour juger au retard, avec le Cmax seulement pour départager.
+# def ls(instance: Instance, decisions: list[Decision]):  # OLD
+def ls(instance: Instance, decisions: list[Decision], delay_first: bool = False):  # NEW
+    state, obj   = _simulate_one(instance, decisions, delay_first)
     idx: int     = 0
     last_M1: int = -1
     while idx < len(decisions):
@@ -31,7 +35,7 @@ def ls(instance: Instance, decisions: list[Decision]):
                 d_next.comp      = -1
                 to_test[idx]     = d_next
                 idx              += 1
-            new_state, new_obj = _simulate_one(instance, to_test)
+            new_state, new_obj = _simulate_one(instance, to_test, delay_first)
             if new_obj <= obj:
                 print("LOCAL SEARCH found a better solution: case 1 (remove useless parallel)...")
                 decisions = to_test
@@ -47,7 +51,7 @@ def ls(instance: Instance, decisions: list[Decision]):
                 d_next.comp      = last_M1
                 to_test[idz]     = d_next
                 idz += 1
-                new_state, new_obj = _simulate_one(instance, to_test)
+                new_state, new_obj = _simulate_one(instance, to_test, delay_first)
                 if new_obj <= obj:
                     print("LOCAL SEARCH found a better solution: case 2 (add more parallel)...")
                     decisions = to_test
@@ -58,9 +62,12 @@ def ls(instance: Instance, decisions: list[Decision]):
             idx += 1
     return state
 
-def _simulate_one(instance: Instance, decisions: list[Decision]) -> Tuple[State, int]:
+# def _simulate_one(instance: Instance, decisions: list[Decision]) -> Tuple[State, int]:  # OLD
+def _simulate_one(instance: Instance, decisions: list[Decision], delay_first: bool = False):  # NEW
     state: State = State(instance, M, L, NB_STATIONS, BIG_STATION, [], automatic_build=True)
     for d in decisions:
         state = simulate(state, d=d, clone=False) 
     obj: int = state.total_delay + state.cmax
+    if delay_first:  # NEW : critère lexicographique (retard, Cmax) ; les comparaisons "<=" marchent sur les tuples
+        obj = (state.total_delay, state.cmax)  # NEW
     return state, obj

@@ -1,0 +1,959 @@
+# master_problem/acceptation_method_complete_agent.py
+# Copie de master_problem/acceptation_method.py qui utilise le "complete agent"
+# (GNN + beam search + recherche locale) au lieu du rollout GNN glouton.
+import csv
+import os
+import random
+
+from gantt_builder.gnn_gantt import gnn_gantt
+from models.order import OrderInstance
+from models.state import State, JobState
+from models.instance import Job
+from models.agent import Agent
+from simulators.gnn_simulator import build_state_from_cut
+from models.environment import Environment
+from gnn_solver import search_possible_decisions, take_one_step, build_scores_and_filter
+from models.environment import Candidate
+from heuristic.local_search_complete_agent import ls_from_cut, weighted_key
+import ray
+from conf import *
+import time
+
+
+# ############################################
+# =*= THE ACCEPTATION METHOD FOR NEW JOBS  =*=
+# ############################################
+__author__  = "Hedi Boukamcha"
+__email__   = "hedi.boukamcha.1@ulaval.ca"
+__version__ = "2.0.0" 
+__license__ = "MIT"
+
+def save_step_gantt(env, gantt_dir: str | None, label: str, step: int, cut_times: list[int] | None = None):
+    if gantt_dir is None: return
+    os.makedirs(gantt_dir, exist_ok=True)
+    path = os.path.join(gantt_dir, f"{label}_step_{step:03d}.png")
+    gnn_gantt(path, env.state, f"{label} | step {step}", cut_times=cut_times or [])
+
+def compute_current_schedule_ref(state: State, all_weights: dict) -> tuple[float, int]:
+    """ Compute the reference cost from current schedule"""
+    cost_ref = sum(
+        all_weights[id(j.job)] * j.delay
+        for j in state.job_states)
+    cmax_ref = state.cmax
+    print("\n  === Référence cédule actuelle ===")
+    print(f"  tardiness ref existants : {[j.delay for j in state.job_states]}")
+    print(f"  weights ref existants   : {[round(all_weights[id(j.job)], 4) for j in state.job_states]}")
+    print(f"  cost_ref                : {cost_ref:.4f}")
+    print(f"  cmax_ref                : {cmax_ref}")
+    return cost_ref, cmax_ref
+
+def subset_name(subset, new_jobs):
+    if not subset: return "empty"
+    return "_".join(
+        f"J{new_jobs.index(job) + 1}"
+        for job in subset)
+
+def safe_position_name(pos):
+    if pos is None: return "None"
+    if hasattr(pos, "position_type"):
+        try:
+            return LOCATION_NAMES[pos.position_type]
+        except Exception:
+            return f"pos_type={pos.position_type}"
+    return str(pos)
+
+def safe_event_type_name(event_type):
+    try:
+        return EVENT_NAMES[event_type]
+    except Exception:
+        return str(event_type)
+
+def safe_job_name(job):
+    if job is None:
+        return "None"
+    return f"J{job.id + 1}"
+
+def safe_operation_name(operation):
+    if operation is None:
+        return "None"
+    return f"O{operation.id + 1}"
+
+def safe_station_name(station):
+    if station is None:
+        return "None"
+    return f"S{station.id + 1}"
+
+def print_calendar(calendar, title: str):
+    print(f"\n--- {title} ---")
+    if calendar is None or not calendar.has_events():
+        print("  Aucun événement")
+        return
+    events = sorted(calendar.events, key=lambda e: (e.start, e.end))
+    for e in events:
+        print(
+            f"  [{e.start:>4} -> {e.end:>4}] "
+            f"type={safe_event_type_name(e.event_type):<12} | "
+            f"job={safe_job_name(e.job):<5} | "
+            f"op={safe_operation_name(e.operation):<5} | "
+            f"station={safe_station_name(e.station):<5} | "
+            f"source={safe_position_name(e.source):<12} | "
+            f"dest={safe_position_name(e.dest):<12}")
+
+def check_calendar_overlaps(calendar, title: str):
+    if calendar is None or not calendar.has_events():
+        return
+    events = sorted(calendar.events, key=lambda e: (e.start, e.end))
+    for prev, curr in zip(events, events[1:]):
+        if curr.start < prev.end:
+            print(
+                f"  ⚠️ OVERLAP dans {title}: "
+                f"[{prev.start}->{prev.end}] "
+                f"{safe_event_type_name(prev.event_type)} "
+                f"{safe_job_name(prev.job)} "
+                f"avec "
+                f"[{curr.start}->{curr.end}] "
+                f"{safe_event_type_name(curr.event_type)} "
+                f"{safe_job_name(curr.job)}")
+
+def print_state_calendars(state: State, title: str = ""):
+    print("\n" + "=" * 100)
+    print(f"📅 CALENDARS {title}")
+    print("=" * 100)
+    print(
+        f"\nSTATE | cmax={state.cmax} | "
+        f"start_time={state.start_time} | "
+        f"total_delay={state.total_delay}")
+    print(
+        f"\nMACHINE 1 | free_at={state.machine1.free_at} | "
+        f"current_job={safe_job_name(state.machine1.current_job)} | "
+        f"pos_is_full={getattr(state.machine1, 'pos_is_full', None)}")
+    print_calendar(state.machine1.calendar, "MACHINE 1")
+    print(
+        f"\nMACHINE 2 | free_at={state.machine2.free_at} | "
+        f"current_job={safe_job_name(state.machine2.current_job)}")
+    print_calendar(state.machine2.calendar, "MACHINE 2")
+    print(
+        f"\nROBOT | free_at={state.robot.free_at} | "
+        f"current_job={safe_job_name(state.robot.current_job)} | "
+        f"location={safe_position_name(state.robot.location)}")
+    print_calendar(state.robot.calendar, "ROBOT")
+    for s in state.all_stations.stations:
+        print(
+            f"\nSTATION S{s.id + 1} | free_at={s.free_at} | "
+            f"current_job={safe_job_name(s.current_job)} | "
+            f"accept_big={s.accept_big}"
+        )
+        print_calendar(s.calendar, f"STATION S{s.id + 1}")
+    for j in state.job_states:
+        print(
+            f"\nJOB J{j.id + 1} | "
+            f"status={j.status} | "
+            f"location={safe_position_name(j.location)} | "
+            f"current_station={safe_station_name(j.current_station)} | "
+            f"release={j.job.release_date} | "
+            f"due_date={j.job.due_date} | "
+            f"cost={j.job.cost} | "
+            f"end={j.end} | "
+            f"delay={j.delay}"
+        )
+        for o in j.operation_states:
+            print(
+                f"    O{o.id + 1} | "
+                f"type={o.operation.type} | "
+                f"p={o.operation.processing_time} | "
+                f"remaining={o.remaining_time} | "
+                f"status={o.status} | "
+                f"start={o.start} | "
+                f"end={o.end}"
+            )
+        print_calendar(j.calendar, f"JOB J{j.id + 1}")
+    print("\n--- CHECK OVERLAPS ---")
+    check_calendar_overlaps(state.machine1.calendar, "MACHINE 1")
+    check_calendar_overlaps(state.machine2.calendar, "MACHINE 2")
+    check_calendar_overlaps(state.robot.calendar, "ROBOT")
+
+    for s in state.all_stations.stations:
+        check_calendar_overlaps(s.calendar, f"STATION S{s.id + 1}")
+
+    for j in state.job_states:
+        check_calendar_overlaps(j.calendar, f"JOB J{j.id + 1}")
+
+    print("\n" + "=" * 100)
+    print("END OF CALENDARS")
+    print("=" * 100 + "\n")
+
+# Evaluation des nouveaux jobs (sous ensembles): qq soit un seul job ou bien une combinaison de plusieurs jobs
+def _find_wait_time(cut_state: State, cut_time: int) -> int | None:
+    """
+    Prochain instant où une opération existante en cours d'exécution au cut se termine.
+    Retourne None si aucune opération n'est en exécution au cut.
+    """
+    ends = []
+    for j in cut_state.job_states:
+        for o in j.operation_states:
+            if o.remaining_time > 0:
+                if o.status == IN_EXECUTION:
+                    last_event = j.calendar.get_last_event()
+                    if last_event and last_event.end > cut_time:
+                        ends.append(last_event.end)
+                break
+    # BUG FIX: build_state_from_cut's fix functions (_fix_robot_held_job, and the new
+    # _fix_parallel_m1_job_finishing) synthesize the missing MOVE+UNLOAD tail for a job whose
+    # last operation was still in flight at cut_time, and as part of that they seal the job's
+    # status straight to DONE (that is the whole point -- its cost/delay must be final). Once
+    # that happens, the job-status loop above no longer sees it as IN_EXECUTION, so a subset
+    # where *every* in-flight job happened to be one of these "already sealed" cases returned
+    # wait_time=None even though the robot/machines are still genuinely busy past cut_time
+    # (their free_at says so) -- this silently made both the "immediate" and "delayed" branches
+    # unavailable in evaluate_subset, i.e. every subset looked infeasible. Fix: also fall back to
+    # each resource's own free_at, which stays correct regardless of job-status bookkeeping.
+    # ends = [...]  # OLD (job-status only)
+    for _free_at in (cut_state.robot.free_at, cut_state.machine1.free_at, cut_state.machine2.free_at):  # NEW
+        if _free_at > cut_time:  # NEW
+            ends.append(_free_at)  # NEW
+    return min(ends) if ends else None
+
+def _greedy_rollout(cut_state: State, start_time: int, agent: Agent, device: str) -> Environment | None:
+    """
+    Rollout greedy du GNN depuis start_time sur cut_state (modifié en place).
+    Retourne l'environnement final, ou None si aucune séquence faisable.
+    """
+    cut_state.compute_obj_values_and_upper_bounds(unloading_time=0, current_time=start_time)
+    graph = cut_state.to_hyper_graph(last_job_in_pos=-1, current_time=start_time, device=device)
+    env = Environment(graph=graph, state=cut_state, n=len(cut_state.job_states), action_time=start_time)
+    env.possible_decisions, env.decisionsT = search_possible_decisions(env=env, device=device)
+    while env.possible_decisions:
+        # action_id: int = agent.select_next_decision(graph=env.graph, decisionsT=env.decisionsT, greedy=True)  # OLD
+        # env = take_one_step(agent=agent, last_env=env, action_id=action_id, device=device, clone=True)      # OLD
+        # NEW : même choix glouton (meilleure valeur Q d'abord), mais si le simulateur juge la décision
+        # infaisable (RuntimeError, ex. « Impossible de libérer S2 » quand la station est tenue par un job
+        # en route vers sa machine au cut), on essaie l'action suivante au lieu de faire planter l'instance
+        # entière -- comme la cédulation de l'Order 1 le fait déjà.
+        q_values = agent.get_all_q_values(env.graph, env.decisionsT)
+        ranked   = sorted(range(len(env.possible_decisions)), key=lambda i: q_values[i].item(), reverse=True)
+        next_env = None
+        for action_id in ranked:
+            try:
+                next_env = take_one_step(agent=agent, last_env=env, action_id=action_id, device=device, clone=True)
+                break
+            except RuntimeError:
+                continue
+        if next_env is None:
+            return None  # aucune décision faisable
+        env = next_env
+    return env
+
+
+# =*= COMPLETE AGENT : GNN + BEAM SEARCH + RECHERCHE LOCALE =*=
+@ray.remote
+def _safe_step_as_task(p_idx: int, q_val: float, agent: Agent, last_env: Environment, action_id: int, device: str):
+    """
+    Même logique que gnn_solver.step_as_task, avec deux différences :
+      - une action infaisable retourne None au lieu de planter ray.get ;
+      - CORRECTIF LOOKAHEAD : dans gnn_solver.step_as_task, les 2 pas gloutons du lookahead
+        modifient le candidat lui-même (next = env puis take_one_step(..., clone=False)), donc
+        chaque candidat avance de 3 décisions au lieu d'une et le beam saute des séquences
+        (ex. J2.M1 -> J1.M1 parallèle -> J2.M2 parallèle). Ici le lookahead se fait sur une
+        COPIE : le candidat retourné reste l'état après la seule action évaluée, et le
+        lookahead sert uniquement à calculer son score (cmax, delay).
+    """
+    try:
+        env: Environment = take_one_step(agent=agent, last_env=last_env, action_id=action_id, device=device, clone=True)
+        horizon: int = 2
+        next: Environment = env.clone() if env.possible_decisions else env  # lookahead sur une copie
+        while horizon > 0 and next.possible_decisions:
+            a_id: int = agent.select_next_decision(graph=next.graph, decisionsT=next.decisionsT, greedy=True)
+            next = take_one_step(agent=agent, last_env=next, action_id=a_id, device=device, clone=False)
+            horizon -= 1
+        return Candidate(parent_idx=p_idx, action_idx=action_id, Q_value=q_val, env=env,
+                         cmax=next.state.ub_cmax + next.state.cmax,
+                         delay=next.state.total_delay + next.state.ub_delay)
+    except RuntimeError:
+        return None
+
+def _decisions_signature(state: State, prefix_len: int) -> tuple:
+    return tuple((d.job_id, d.operation_id, bool(d.parallel)) for d in state.decisions[prefix_len:])
+
+def _complete_rollout(cut_state: State, start_time: int, agent: Agent, device: str,
+                      use_beam: bool = True, improve: bool = True, beam_width: int = BEAM_WIDTH) -> Environment | None:
+    """
+    Cédule cut_state à partir de start_time avec le complete agent :
+      - use_beam=True  : beam search guidé par le GNN (comme gnn_solver.beam_solve_one) ;
+      - use_beam=False : rollout GNN glouton (comme _greedy_rollout) ;
+      - improve=True   : recherche locale au cut (ls_from_cut) sur chaque solution terminée.
+    La meilleure solution est choisie avec le critère de la méthode d'acceptation :
+    (retard pondéré total, cmax). Retourne None si aucune solution complète n'est trouvée.
+    """
+    n = len(cut_state.job_states)
+    cut_state.compute_obj_values_and_upper_bounds(unloading_time=0, current_time=start_time)
+    start_snapshot = cut_state.clone()           # état au cut AVANT toute décision (pour la recherche locale)
+    prefix_len     = len(start_snapshot.decisions)
+
+    if not use_beam:
+        g_env = _greedy_rollout(cut_state, start_time, agent, device)
+        finished = [g_env] if g_env is not None else []
+    else:
+        graph = cut_state.to_hyper_graph(last_job_in_pos=-1, current_time=start_time, device=device)
+        env   = Environment(graph=graph, state=cut_state, n=n, action_time=start_time)
+        env.possible_decisions, env.decisionsT = search_possible_decisions(env=env, device=device)
+        beam: list[Environment]     = [env] if env.possible_decisions else []
+        finished: list[Environment] = [] if env.possible_decisions else [env]
+        agent_ref = ray.put(agent)
+        while beam:
+            futures = []
+            for p_idx, parent_env in enumerate(beam):
+                q_values = agent.get_all_q_values(parent_env.graph, parent_env.decisionsT)
+                parent_ref = ray.put(parent_env)
+                for a_idx, q_val in enumerate(q_values.tolist()):
+                    futures.append(_safe_step_as_task.remote(p_idx=p_idx, q_val=q_val, agent=agent_ref, last_env=parent_ref, action_id=a_idx, device='cpu'))
+            candidates = [c for c in ray.get(futures) if c is not None]
+            if not candidates:
+                break
+            top_k = build_scores_and_filter(candidates=candidates, limit=beam_width)
+            next_beam: list[Environment] = []
+            for c in top_k:
+                c.env.graph      = c.env.graph.to(device)
+                c.env.decisionsT = c.env.decisionsT.to(device)
+                if not c.env.possible_decisions:
+                    finished.append(c.env)
+                else:
+                    next_beam.append(c.env)
+            beam = next_beam
+
+    if not finished:
+        return None
+
+    # Dédoublonnage : plusieurs branches du beam peuvent mener à la même séquence de décisions
+    unique, seen = [], set()
+    for f in finished:
+        sig = _decisions_signature(f.state, prefix_len)
+        if sig not in seen:
+            seen.add(sig)
+            unique.append(f)
+
+    results = []
+    for f in unique:
+        best_f, best_k = f, weighted_key(f.state)
+        if improve:
+            ls_env, ls_key = ls_from_cut(start_snapshot, start_time, n, f.state.decisions[prefix_len:])
+            if ls_env is not None and ls_key <= best_k:
+                best_f, best_k = ls_env, ls_key
+        results.append((best_k, best_f))
+    return min(results, key=lambda r: r[0])[1]
+
+def evaluate_subset(base_cut_state: State, 
+                    base_wait_state: State | None, 
+                    wait_time: int | None, 
+                    subset: list[Job], 
+                    new_jobs: list[Job], 
+                    cut_time: int, 
+                    nb_existing: int, 
+                    agent: Agent, 
+                    device: str, 
+                    all_weights: dict, 
+                    gantt_dir: str | None = None,
+                    rollout_fn=None) -> tuple[float, float, float, int]:
+    if rollout_fn is None:
+        rollout_fn = lambda st, t: _greedy_rollout(st, t, agent, device)
+    
+    # 1. Clone the pre-computed cut state and inject jobs
+    cut_state = base_cut_state.clone()
+    cut_state.add_jobs_to_state(subset)
+
+    branches     = []
+    robot_locked = cut_state.robot.free_at > cut_time
+    m1_locked    = cut_state.machine1.free_at > cut_time
+    m2_locked    = cut_state.machine2.free_at > cut_time
+    
+    if not (robot_locked and m1_locked and m2_locked):
+        branches.append(("immediate", cut_time, cut_state))
+
+    # 2. Clone the pre-computed wait state (if it exists) and inject jobs
+    if base_wait_state is not None and wait_time is not None:
+        wait_state = base_wait_state.clone()
+        wait_state.add_jobs_to_state(subset)
+        branches.append(("delayed", wait_time, wait_state))
+
+    best_env = None
+    best_costs = None
+    for branch_name, start_time, branch_state in branches:
+        b_env = rollout_fn(branch_state, start_time)
+        if b_env is None:
+            print(f"    ⚠️ Branche {branch_name} (start={start_time}) infaisable")
+            continue
+        b_existing = b_env.state.job_states[:nb_existing]
+        b_new = b_env.state.job_states[nb_existing:]
+        b_cost_e = sum(all_weights[id(j.job)] * j.delay for j in b_existing)
+        b_cost_n = sum(all_weights[id(j.job)] * j.delay for j in b_new)
+        b_total = b_cost_e + b_cost_n
+        print(f"    branche {branch_name} (start={start_time}): "
+              f"cost_existants={b_cost_e:.4f} | cost_nouveaux={b_cost_n:.4f} | "
+              f"total={b_total:.4f} | cmax={b_env.state.cmax}")
+        if best_env is None or (b_total, b_env.state.cmax) < (best_costs[2], best_env.state.cmax):
+            best_env = b_env
+            best_costs = (b_cost_e, b_cost_n, b_total)
+
+    if best_env is None:
+        print_state_calendars(cut_state, title=f"| subset={subset_name(subset, new_jobs)} | cut={cut_time} | ECHEC")
+        return float("inf"), float("inf"), float("inf"), float("inf")
+
+    env             = best_env
+    existing_jobs   = env.state.job_states[:nb_existing]
+    new_jobs_states = env.state.job_states[nb_existing:]
+    cost_existants, cost_nouveaux, total_cost = best_costs
+
+    print(f"    tardiness existants: {[j.delay for j in existing_jobs]}")
+    print(f"    weights existants: {[round(all_weights[id(j.job)], 4) for j in existing_jobs]}")
+    print(f"    weighted tardiness existants: {[round(all_weights[id(j.job)] * j.delay, 4) for j in existing_jobs]}")
+    print(f"    cost_existants={cost_existants:.4f}")
+
+    print(f"    tardiness nouveaux: {[j.delay for j in new_jobs_states]}")
+    print(f"    weights nouveaux: {[round(all_weights[id(j.job)], 4) for j in new_jobs_states]}")
+    print(f"    weighted tardiness nouveaux: {[round(all_weights[id(j.job)] * j.delay, 4) for j in new_jobs_states]}")
+    print(f"    cost_nouveaux={cost_nouveaux:.4f}")
+    
+    if gantt_dir is not None:
+        os.makedirs(gantt_dir, exist_ok=True)
+        s_name     = subset_name(subset, new_jobs)
+        gantt_path = os.path.join(
+            gantt_dir,
+            f"subset_{s_name}_cut_{cut_time}_cmax_{env.state.cmax}_costE_{int(cost_existants)}.png")
+        gnn_gantt(
+            gantt_path,
+            env.state,
+            f"Subset {s_name} | cut={cut_time} | costE={cost_existants:.2f} | cmax={env.state.cmax}",
+            cut_times=[cut_time])
+        print(f"    📊 Gantt subset sauvegardé : {gantt_path}")
+    return cost_existants, cost_nouveaux, total_cost, env.state.cmax
+
+# Forward et backward tournent ensemble, niveau par niveau, en partageant les
+# sous-ensembles elagues trouves par l'un ou l'autre sens de recherche.
+def bfs_bidirectional(state: State, new_jobs: list[Job], cut_time: int, agent: Agent, device: str, all_weights: dict, delta_ratio: float = 0.2, gantt_dir: str | None = None, rollout_fn=None) -> list[Job]:
+    nb_existing = len(state.job_states)
+    start_time = time.perf_counter()
+
+    n_evaluated = 0
+    n_pruned = 0
+    n_skipped = 0
+
+    cost_ref, cmax_ref = compute_current_schedule_ref(state, all_weights)
+    cost_max = cost_ref * (1 + delta_ratio)
+    print("\n  === BFS bidirectionnel (forward + backward) ===")
+    print(f"  cost_ref={cost_ref:.4f} | cost_max={cost_max:.4f}")
+
+    def subset_key(subset):
+        return frozenset(id(j) for j in subset)
+
+    pruned_keys: set = set()  # partage entre forward et backward
+
+    def contains_pruned(key) -> bool:
+        return any(pk.issubset(key) for pk in pruned_keys)
+
+    base_cut_state = build_state_from_cut(state, cut_time)
+    wait_time      = _find_wait_time(base_cut_state, cut_time)
+    
+    if wait_time is not None and wait_time > cut_time:
+        base_wait_state = build_state_from_cut(state, wait_time)
+    else:
+        base_wait_state = None
+
+    def evaluate(subset):
+        nonlocal n_evaluated
+        n_evaluated += 1
+        return evaluate_subset(
+            base_cut_state, 
+            base_wait_state, 
+            wait_time, 
+            subset, 
+            new_jobs, 
+            cut_time, 
+            nb_existing, 
+            agent, 
+            device, 
+            all_weights, 
+            gantt_dir=gantt_dir,
+            rollout_fn=rollout_fn
+        )
+    best_subset, best_cost, best_cmax = [], cost_ref, cmax_ref
+
+    forward_level = [[job] for job in new_jobs]
+    forward_visited = set()
+
+    backward_level = [list(new_jobs)]
+    backward_visited = set()
+
+    while forward_level or backward_level:
+        # ---------- un niveau backward (retrecit) ----------
+        if backward_level:
+            level_results = []
+            next_backward = []
+            next_keys = set()
+            for subset in backward_level:
+                key = subset_key(subset)
+                if key in backward_visited:
+                    continue
+                backward_visited.add(key)
+
+                if contains_pruned(key):
+                    n_skipped += 1
+                else:
+                    cost_existants, _, total_cost, cmax = evaluate(subset)
+                    if cost_existants <= cost_max:
+                        level_results.append((subset, total_cost, cmax))
+                    else:
+                        n_pruned += 1
+                        pruned_keys.add(key)
+
+                # on retrecit meme si ce sous-ensemble est infaisable ou skippe :
+                # un infaisable n'implique rien sur ses propres sous-ensembles
+                for job in subset:
+                    child = [j for j in subset if j is not job]
+                    child_key = subset_key(child)
+                    if child_key not in backward_visited and child_key not in next_keys:
+                        next_keys.add(child_key)
+                        next_backward.append(child)
+
+            if level_results:
+                best_subset, best_cost, best_cmax = min(level_results, key=lambda r: (r[1], r[2]))
+                print(f"  ✅ Backward a trouvé un niveau faisable (size={len(best_subset)}) -> arrêt")
+                backward_level, forward_level = [], []
+                break
+
+            backward_level = next_backward
+
+        # ---------- un niveau forward (grandit) ----------
+        if forward_level:
+            next_forward = []
+            for subset in forward_level:
+                key = subset_key(subset)
+                if key in forward_visited:
+                    continue
+                forward_visited.add(key)
+
+                if contains_pruned(key):
+                    n_skipped += 1
+                    continue  # sur-ensemble d'un infaisable connu -> inutile d'étendre
+
+                cost_existants, _, total_cost, cmax = evaluate(subset)
+                if cost_existants <= cost_max:
+                    if len(subset) > len(best_subset) or (
+                        len(subset) == len(best_subset) and (total_cost, cmax) < (best_cost, best_cmax)
+                    ):
+                        best_subset, best_cost, best_cmax = subset, total_cost, cmax
+                    for job in new_jobs:
+                        if job not in subset:
+                            child = subset + [job]
+                            if subset_key(child) not in forward_visited:
+                                next_forward.append(child)
+                else:
+                    n_pruned += 1
+                    pruned_keys.add(key)
+
+            forward_level = next_forward
+
+            # backward ne peut plus battre ce que forward a déjà trouvé
+            if backward_level and len(best_subset) > len(backward_level[0]):
+                print(
+                    f"  ⏭️ Forward a déjà trouvé mieux (size={len(best_subset)}) "
+                    f"que ce que backward peut encore atteindre (size={len(backward_level[0])}) -> arrêt backward"
+                )
+                backward_level = []
+
+    end_time = time.perf_counter()
+    print("\n  === Statistiques méthode d'acceptation (bidirectionnel) ===")
+    print(f"  Temps computationnel : {end_time - start_time:.4f} secondes")
+    print(f"  Subsets évalués     : {n_evaluated}")
+    print(f"  Subsets élagués     : {n_pruned}")
+    print(f"  Subsets skippés     : {n_skipped} (grâce au partage forward/backward)")
+
+    print("\n  === Résultat BFS bidirectionnel ===")
+    print(
+        f"  Best subset : "
+        f"{[f'J{new_jobs.index(j)+1}(dd={j.due_date})' for j in best_subset]}"
+    )
+    print(f"  Best size   : {len(best_subset)}")
+    print(f"  Best cost   : {best_cost:.4f}")
+    print(f"  Best cmax   : {best_cmax}")
+
+    return best_subset
+
+
+def save_acceptation_analysis_csv(
+    csv_path: str,
+    existing_jobs_final,
+    accepted_new_jobs_final,
+    reference_completion_times: dict,
+    cmax: int | None = None  # NEW: so Cmax is visible directly in the per-job table, not just in summary.csv
+):
+    import os
+    import csv
+
+    def r2(x):
+        if x == "":
+            return ""
+        if x is None:
+            return ""
+        return round(x, 2)
+
+    os.makedirs(os.path.dirname(csv_path), exist_ok=True)
+
+    with open(csv_path, mode="w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+
+        # ADDED: "cost", "Cj_initial"/"Cj_final" (per-job completion time) and
+        # "Tj_final_pondere" (weighted delay) columns, per user request -- for each example,
+        # clearly show each job's own Cj (not just its tardiness), both the individual AND
+        # weighted delay, and the schedule's total Cmax repositioned right before "dj". Cmax is
+        # repeated on every row (same value for the whole schedule) rather than as a separate
+        # header line, so the file stays a single flat table any spreadsheet/pandas tool can
+        # read directly.
+        # writer.writerow(["Pool","job","Cmax","cost","Tj_initial","Tj_final","Tj_final_pondere","Diff_Tj","dj","(Tj-dj)/dj","((Tj_final)-(Tj_initial))/(Tj_initial)"])  # OLD
+        writer.writerow([  # NEW
+            "Pool",
+            "job",
+            "cost",
+            "Cj_initial",
+            "Cj_final",
+            "Diff_Cj",
+            "Tj_initial",
+            "Tj_final",
+            "Diff_Tj",
+            "Tj_initial_pondere",
+            "Tj_final_pondere",
+            "Diff_Tj_ponderee",
+            "Cmax",
+            "dj",
+            # "(Tj-dj)/dj",
+            # "((Tj_final)-(Tj_initial))/(Tj_initial)"
+        ])
+
+        for j in existing_jobs_final:
+            dj = j.job.due_date
+            cost = j.job.cost  # NEW
+
+            # Cj dans la cédule de référence, avant acceptation
+            Cj_ref = reference_completion_times.get(id(j.job), None)
+
+            # Retard initial avant acceptation
+            Tj_initial = (
+                max(0, Cj_ref - dj)
+                if Cj_ref is not None
+                else None
+            )
+
+            # Cj après acceptation / insertion des nouveaux jobs
+            Cj_final = j.end
+            diff_Cj = (  # NEW
+                Cj_final - Cj_ref
+                if Cj_ref is not None
+                else None
+            )
+
+            # Retard final après acceptation
+            Tj_final = max(0, Cj_final - dj)
+            Tj_final_pondere = cost * Tj_final  # NEW
+
+            diff_Tj = (
+                Tj_final - Tj_initial
+                if Tj_initial is not None
+                else None
+            )
+
+            # Diff_Tj_ponderee : version pondérée de Diff_Tj (NEW)
+            Tj_initial_pondere = (
+                cost * Tj_initial
+                if Tj_initial is not None
+                else None
+            )
+            diff_Tj_pondere = (
+                Tj_final_pondere - Tj_initial_pondere
+                if Tj_initial_pondere is not None
+                else None
+            )
+
+            # ratio_due/ratio_Tj kept as comments: "(Tj-dj)/dj" and "((Tj_final)-(Tj_initial))/(Tj_initial)" are no longer displayed, per user request
+            # ratio_due = (Tj_final - dj / dj) if dj != 0 else None  # OLD
+            # ratio_Tj = (diff_Tj / Tj_initial) if Tj_initial is not None and Tj_initial != 0 else None  # OLD
+            # writer.writerow(["Existants", f"J{j.id+1}", r2(Tj_initial), r2(Tj_final), r2(diff_Tj), r2(dj), r2(ratio_due), r2(ratio_Tj), ""])  # OLD (also had a stray trailing empty column not matching the header count)
+            writer.writerow([  # NEW
+                "Existants",
+                f"J{j.id + 1}",
+                r2(cost),
+                r2(Cj_ref),
+                r2(Cj_final),
+                r2(diff_Cj),
+                r2(Tj_initial),
+                r2(Tj_final),
+                r2(diff_Tj),
+                r2(Tj_initial_pondere),
+                r2(Tj_final_pondere),
+                r2(diff_Tj_pondere),
+                cmax if cmax is not None else "",
+                r2(dj)
+                # r2(ratio_due),  # OLD
+                # r2(ratio_Tj)    # OLD
+            ])
+
+        for j in accepted_new_jobs_final:
+            dj = j.job.due_date
+            cost = j.job.cost  # NEW
+
+            Cj_new = j.end
+            Tj_new = max(0, Cj_new - dj)
+            Tj_new_pondere = cost * Tj_new  # NEW
+
+            # ratio_due = (Tj_new / dj) if dj != 0 else None  # OLD
+            # writer.writerow(["Nouveaux acceptés", f"J{j.id+1}", "", r2(Tj_new), "", r2(dj), r2(ratio_due), "", ""])  # OLD
+            writer.writerow([  # NEW
+                "Nouveaux acceptés",
+                f"J{j.id + 1}",
+                r2(cost),
+                "",                     # Cj_initial : pas applicable pour les nouveaux (pas dans la cédule de référence)
+                r2(Cj_new),             # Cj_final
+                "",                     # Diff_Cj : pas applicable
+                "",                     # Tj_initial : pas applicable pour les nouveaux
+                r2(Tj_new),             # Tj_final
+                "",                     # Diff_Tj : pas applicable
+                "",                     # Tj_initial_pondere : pas applicable
+                r2(Tj_new_pondere),     # Tj_final_pondere
+                "",                     # Diff_Tj_ponderee : pas applicable
+                cmax if cmax is not None else "",
+                r2(dj)
+                # r2(ratio_due),  # OLD
+                # ""               # ((Tj_final)-(Tj_initial))/(Tj_initial) : pas applicable  # OLD
+            ])
+   
+def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str, delta_ratio: float = 0.2, gantt_dir: str | None = None, save_step_gantts: bool = False, analysis_dir: str | None = None, use_beam: bool = True, improve: bool = True, beam_width: int = BEAM_WIDTH) -> State:
+    """
+    Pipeline complet : schedule Order 1 puis applique le Master Problem pour chaque order suivant.
+    Version complete agent : toutes les cédulations passent par _complete_rollout (beam + recherche locale).
+    """
+    rollout_fn = lambda st, t: _complete_rollout(st, t, agent, device, use_beam=use_beam, improve=improve, beam_width=beam_width)
+    print(f"Complete agent : beam={use_beam} (largeur={beam_width}) | recherche locale={improve}")
+    # 1. Scheduler le premier order normalement
+    first_order = order_instance.orders[0]
+    instance    = first_order.to_instance()
+    state       = State(instance, M, L, NB_STATIONS, BIG_STATION, [], automatic_build=True)
+    state.compute_obj_values_and_upper_bounds(unloading_time=0, current_time=0)
+    graph       = state.to_hyper_graph(last_job_in_pos=-1, current_time=0, device=device)
+    env         = Environment(graph=graph, state=state, n=len(instance.jobs))
+    env.possible_decisions, env.decisionsT = search_possible_decisions(env=env, device=device)
+    all_weights = {}
+    global_start_time = time.perf_counter()
+    step = 0
+    order1_env = None
+    if use_beam or improve:
+        order1_env = rollout_fn(state.clone(), 0)
+        if order1_env is None:
+            print("⚠️ Complete agent : aucune solution pour Order 1 -> repli sur la cédulation gloutonne d'origine")
+        else:
+            env = order1_env
+    while order1_env is None and env.possible_decisions:
+        q_values = agent.get_all_q_values(env.graph, env.decisionsT)
+        ranked_actions = sorted(
+            range(len(env.possible_decisions)),
+            key=lambda i: q_values[i].item(),
+            reverse=True)
+        success   = False
+        last_error = None
+        for action_id in ranked_actions:
+            try:
+                trial_env = take_one_step(
+                    agent=agent,
+                    last_env=env,
+                    action_id=action_id,
+                    device=device,
+                    clone=True)
+                env     = trial_env
+                success = True
+                step   += 1
+                if save_step_gantts:
+                    save_step_gantt(
+                        env=env,
+                        gantt_dir=gantt_dir,
+                        label="order_1",
+                        step=step,
+                        cut_times=[])
+
+                break
+
+            except RuntimeError as e:
+                last_error = e
+                continue
+
+        if not success:
+            print(f"⚠️ Scheduling Order 1 incomplet : {last_error}")
+            break
+
+    print(f"Order 1 schedulé | Cmax={env.state.cmax} | Tardiness={sum(j.delay for j in env.state.job_states)}")
+    first_order = order_instance.orders[0]
+    for job in first_order.jobs:
+        #all_weights[id(job)] = random.uniform(EXISTING_COST_MIN, EXISTING_COST_MAX)
+        all_weights[id(job)] = job.cost
+
+    # 2. Pour chaque order suivant → Master Problem
+    for order in order_instance.orders[1:]:
+        cut_time  = order.cut_time
+        new_jobs  = order.jobs
+
+        for job in new_jobs:
+            if id(job) not in all_weights:
+                #all_weights[id(job)] = random.uniform(NEW_COST_MIN, NEW_COST_MAX)
+                all_weights[id(job)] = job.cost
+
+        # Gantt avant le cut
+        if gantt_dir is not None:
+            before_cut_path = os.path.join(gantt_dir, f"before_cut_{order.id}.png")
+            gnn_gantt(before_cut_path, env.state, f"before cut {order.id}", cut_times=[cut_time])
+
+        print(f"\n=== Order {order.id} | cut_time={cut_time} | {len(new_jobs)} nouveaux jobs ===")
+
+        # 3. Master Problem → choisir le meilleur sous-ensemble
+        #best_subset = bfs_forward(env.state, new_jobs, cut_time, agent, device, all_weights, delta_ratio)
+        #best_subset = bfs_backward(env.state, new_jobs, cut_time, agent, device, all_weights, delta_ratio)
+        subset_gantt_dir = None
+
+        if gantt_dir is not None:
+            subset_gantt_dir = os.path.join(
+                gantt_dir,
+                f"order_{order.id}_subset_tests"
+            )
+
+        best_subset = bfs_bidirectional(
+            env.state,
+            new_jobs,
+            cut_time,
+            agent,
+            device,
+            all_weights,
+            delta_ratio,
+            gantt_dir=subset_gantt_dir,
+            rollout_fn=rollout_fn
+        )
+        
+        print(f"\n  === Résultat Order {order.id} ===")
+        print(f"  Jobs acceptés  : {[f'J{new_jobs.index(j)+1}(dd={j.due_date})' for j in best_subset]}")
+        print(f"  Jobs rejetés   : {[f'J{new_jobs.index(j)+1}(dd={j.due_date})' for j in new_jobs if j not in best_subset]}")
+        print(f"  {len(best_subset)}/{len(new_jobs)} jobs acceptés")
+
+
+        # 4. Reschedule avec le meilleur sous-ensemble
+        if len(best_subset) == 0:
+            print(f"  Aucun job accepté → planning original conservé")
+
+            if analysis_dir is not None:
+                csv_path = os.path.join(
+                    analysis_dir,
+                    f"order_{order.id}_acceptance_analysis.csv"
+                )
+
+                reference_completion_times = {
+                    id(j.job): j.end
+                    for j in env.state.job_states
+                }
+
+                save_acceptation_analysis_csv(
+                    csv_path=csv_path,
+                    existing_jobs_final=env.state.job_states,
+                    accepted_new_jobs_final=[],
+                    reference_completion_times=reference_completion_times,
+                    cmax=env.state.cmax  # NEW
+                )
+
+                print(f"  📄 Tableau analyse sauvegardé : {csv_path}")
+
+            continue
+
+        # Re-cédulation finale avec les deux mêmes branches que evaluate_subset,
+        # pour que la cédule retenue corresponde à celle qui a justifié l'acceptation.
+        base_state = env.state
+        reference_completion_times = {id(j.job): j.end for j in base_state.job_states}
+
+        if save_step_gantts:
+            print("  ℹ️ save_step_gantts non supporté avec la re-cédulation à deux branches — ignoré")
+
+        cut_state = build_state_from_cut(base_state, cut_time)
+        cut_state.add_jobs_to_state(best_subset)
+        wait_time = _find_wait_time(cut_state, cut_time)
+
+        branches     = []
+        robot_locked = cut_state.robot.free_at > cut_time
+        m1_locked    = cut_state.machine1.free_at > cut_time
+        m2_locked    = cut_state.machine2.free_at > cut_time
+        if not (robot_locked and m1_locked and m2_locked):
+            branches.append(("immediate", cut_time, cut_state))
+        if wait_time is not None and wait_time > cut_time:
+            wait_state = build_state_from_cut(base_state, wait_time)
+            wait_state.add_jobs_to_state(best_subset)
+            branches.append(("delayed", wait_time, wait_state))
+
+        best_env = None
+        best_total = None
+        for branch_name, start_time, branch_state in branches:
+            b_env = rollout_fn(branch_state, start_time)
+            if b_env is None:
+                print(f"  ⚠️ Scheduling final : branche {branch_name} (start={start_time}) infaisable")
+                continue
+            b_total = sum(all_weights[id(j.job)] * j.delay for j in b_env.state.job_states)
+            print(
+                f"  Scheduling final : branche {branch_name} (start={start_time}) → "
+                f"total_cost={b_total:.4f} | cmax={b_env.state.cmax}"
+            )
+            if best_env is None or (b_total, b_env.state.cmax) < (best_total, best_env.state.cmax):
+                best_env = b_env
+                best_total = b_total
+
+        if best_env is None:
+            print(f"  ⚠️ Scheduling final incomplet pour Order {order.id} : aucune branche faisable")
+        else:
+            env = best_env
+
+        if gantt_dir is not None:
+            os.makedirs(gantt_dir, exist_ok=True)
+
+            final_gantt_path = os.path.join(
+                gantt_dir,
+                f"order_{order.id}_final_after_acceptance_cmax_{env.state.cmax}.png"
+            )
+
+            gnn_gantt(
+                final_gantt_path,
+                env.state,
+                f"Order {order.id} final after acceptance | cmax={env.state.cmax}",
+                cut_times=[cut_time]
+            )
+
+            print(f"  📊 Gantt final sauvegardé : {final_gantt_path}")
+        #print(f"\n=== État J4 après scheduling Order {order.id} ===")
+        #print(f"J4 status={env.state.job_states[3].status}")
+        #print(f"J4 ops={[(o.status, o.end, o.remaining_time) for o in env.state.job_states[3].operation_states]}")
+        #for e in env.state.job_states[3].calendar.events:
+            #print(f"  start={e.start}, end={e.end}, type={EVENT_NAMES[e.event_type]}")
+        if analysis_dir is not None:
+            csv_path = os.path.join(
+                analysis_dir,
+                f"order_{order.id}_acceptance_analysis.csv"
+            )
+            nb_existing = len(env.state.job_states) - len(best_subset)
+            existing_jobs_final = env.state.job_states[:nb_existing]
+            accepted_jobs_final = env.state.job_states[nb_existing:]
+            save_acceptation_analysis_csv(
+                csv_path=csv_path,
+                existing_jobs_final=existing_jobs_final,
+                accepted_new_jobs_final=accepted_jobs_final,
+                reference_completion_times=reference_completion_times,
+                cmax=env.state.cmax  # NEW
+            )
+            print(f"  📄 Tableau analyse sauvegardé : {csv_path}")
+
+        print(f"Order {order.id} schedulé | Cmax={env.state.cmax} | Tardiness={sum(j.delay * j.job.cost for j in env.state.job_states)}")
+    global_end_time = time.perf_counter()
+    total_acceptance_time = global_end_time - global_start_time
+
+    print("\n=== Statistiques globales méthode d'acceptation ===")
+    print(f"  Temps computationnel total : {total_acceptance_time:.4f} secondes")
+    print(f"  Nombre d'orders            : {len(order_instance.orders)}")
+    print(f"  Nombre total de jobs       : {order_instance.nb_jobs}")
+
+
+    return env.state

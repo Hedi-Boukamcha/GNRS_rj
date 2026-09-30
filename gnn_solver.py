@@ -72,10 +72,16 @@ def reward(env: Environment, device: str) -> Tensor:
     # Normalize by the instance's own initial UB so reward magnitude no longer scales with instance
     # size (raw cmax/delay deltas for xl were ~100x those of s, dominating the shared Q-network's
     # TD-errors and causing s/m/l to regress every time a larger size entered the curriculum).
-    scale: float       = env.init_UB_cmax + env.init_UB_delay + 1e-6
-    delta_cmax: float  = (TRADE_OFF * (env.state.ub_cmax - env.ub_cmax) + env.state.start_time - env.cmax)/(1 + TRADE_OFF)
+    # CHANGEMENT (reward sans Cmax) : la méthode d'acceptation juge au retard pondéré (le Cmax ne sert
+    # qu'à départager), alors que la reward donnait le même poids au Cmax et au retard. On retire le terme
+    # Cmax et on normalise par la seule borne initiale du retard (plancher à 1 : elle vaut 0 quand aucun
+    # retard n'est possible, et diviser par ~0 ferait exploser la reward).
+    # scale: float       = env.init_UB_cmax + env.init_UB_delay + 1e-6  # OLD
+    # delta_cmax: float  = (TRADE_OFF * (env.state.ub_cmax - env.ub_cmax) + env.state.start_time - env.cmax)/(1 + TRADE_OFF)  # OLD
+    scale: float       = max(float(env.init_UB_delay), 1.0)  # NEW
     delta_delay: float = (TRADE_OFF * (env.state.ub_delay - env.ub_delay) + env.state.total_delay - env.delay)/(1 + TRADE_OFF)
-    return torch.tensor([-REWARD_SCALE * (delta_cmax + delta_delay) / scale], dtype=torch.float32, device=device)
+    # return torch.tensor([-REWARD_SCALE * (delta_cmax + delta_delay) / scale], dtype=torch.float32, device=device)  # OLD
+    return torch.tensor([-REWARD_SCALE * delta_delay / scale], dtype=torch.float32, device=device)  # NEW
 
 @ray.remote
 def step_as_task(p_idx: int, q_val: float, agent: Agent, last_env: Environment, action_id: int, device: str, clone: bool=False, train: bool=False, pb_size: int=0) -> Environment:
@@ -130,7 +136,9 @@ def build_scores_and_filter(candidates: list[Candidate], limit: int) -> list[Can
     candidates.sort(key=lambda x: x.Q_value, reverse=True)
     for rank, c in enumerate(candidates):
         c.combined_score = 0.6 * rank
-    candidates.sort(key=lambda x: x.cmax + x.delay, reverse=False)
+    # CHANGEMENT (reward sans Cmax) : classement au retard (pondéré, borne incluse), Cmax seulement pour départager.
+    # candidates.sort(key=lambda x: x.cmax + x.delay, reverse=False)  # OLD
+    candidates.sort(key=lambda x: (x.delay, x.cmax), reverse=False)  # NEW
     for rank, c in enumerate(candidates):
         c.combined_score += 0.4 * rank
     candidates.sort(key=lambda x: x.combined_score)
@@ -163,7 +171,8 @@ def beam_solve_one(agent: Agent, gantt_path: str, path: str, size: str, id: str,
             c.env.decisionsT = c.env.decisionsT.to(device)
             if not c.env.possible_decisions:
                 if improve: # improve finished states with local search
-                    c.env.state = LS(i, c.env.state.decisions)
+                    # c.env.state = LS(i, c.env.state.decisions)  # OLD
+                    c.env.state = LS(i, c.env.state.decisions, delay_first=True)  # NEW (reward sans Cmax)
                 finished.append(c.env)
             else:
                 next_beam.append(c.env)
@@ -172,7 +181,10 @@ def beam_solve_one(agent: Agent, gantt_path: str, path: str, size: str, id: str,
         print("Warning: No finished solution found. Using last active beam.")
     else:
         print(len(finished), "finished solutions found.")
-        best_env = min(finished, key=lambda e: e.state.total_delay + e.state.cmax) # 5. select best among finished
+        # CHANGEMENT (reward sans Cmax) : meilleure solution au retard, Cmax pour départager.
+        # La colonne 'obj' rapportée reste retard + Cmax pour rester comparable au CP et à l'heuristique.
+        # best_env = min(finished, key=lambda e: e.state.total_delay + e.state.cmax) # 5. select best among finished  # OLD
+        best_env = min(finished, key=lambda e: (e.state.total_delay, e.state.cmax)) # 5. select best among finished  # NEW
     obj: int = best_env.state.total_delay + best_env.state.cmax
     print(f"Instance {size}.{id}: OBJ={obj}...")
     extension: str = "improved_beam_" if improve else "beam_"
@@ -201,10 +213,13 @@ def repeated_solve_one(agent: Agent, gantt_path: str, path: str, size: str, id: 
             action_id: int = agent.select_next_decision(graph=env.graph, decisionsT=env.decisionsT)
             env            = take_one_step(agent=agent, last_env=env, action_id=action_id, device=device)
         if improve:
-            env.state = LS(i, env.state.decisions) # improve with local search
-        obj: int = env.state.total_delay + env.state.cmax
+            # env.state = LS(i, env.state.decisions) # improve with local search  # OLD
+            env.state = LS(i, env.state.decisions, delay_first=True) # improve with local search  # NEW (reward sans Cmax)
+        obj: int = env.state.total_delay + env.state.cmax  # (valeur rapportée inchangée, comparable au CP)
         print(f"Instance {size}.{id} (retry #{retry+1}/{retires}): OBJ={obj}...")
-        if best_state is None or obj < best_obj:
+        # CHANGEMENT (reward sans Cmax) : on garde le meilleur essai au retard, Cmax pour départager.
+        # if best_state is None or obj < best_obj:  # OLD
+        if best_state is None or (env.state.total_delay, env.state.cmax) < (best_state.total_delay, best_state.cmax):  # NEW
             best_obj   = obj
             best_state = env.state
     extension: str = "improved_" if improve else ""
@@ -229,8 +244,11 @@ def solve_one_for_training(agent: Agent, path: str, size: str, id: str, device: 
     while env.possible_decisions:
         action_id: int = agent.select_next_decision(graph=env.graph, decisionsT=env.decisionsT, possible_decisions=env.possible_decisions, greedy=greedy, eps_threshold=eps_threshold)
         env = take_one_step(agent=agent, last_env=env, action_id=action_id, pb_size=size, device=device, train=True)
-    obj: int = env.state.total_delay + env.state.cmax
-    return obj, (env.init_UB_cmax + env.init_UB_delay)
+    # CHANGEMENT (reward sans Cmax) : la courbe de validation suit ce que l'agent optimise, le retard pondéré.
+    # obj: int = env.state.total_delay + env.state.cmax  # OLD
+    # return obj, (env.init_UB_cmax + env.init_UB_delay)  # OLD
+    obj: float = env.state.total_delay  # NEW
+    return obj, env.init_UB_delay  # NEW
 
 def solve_all_test(agent: Agent, gantt_path:str, path: str, improve: bool, beam: bool, device: str):
     extension: str = "beam_gnn" if beam else "improved_gnn" if improve else "gnn"

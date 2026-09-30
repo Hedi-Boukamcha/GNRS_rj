@@ -124,7 +124,8 @@ class Agent:
         name: str = f"{size}_obj_{scenario}" if scenario else f"{size}_obj"
         if name not in self.obj:
             title: str = f"Avg objective value for {size.upper()} instances" + (f" [{scenario}]" if scenario else "")
-            self.obj[name] = Loss(xlabel="Episode", ylabel="Objective value (cmax + delay)", title=title, color="orange", show=self.interactive)
+            # CHANGEMENT (reward sans Cmax) : ylabel="Objective value (cmax + delay)"  # OLD
+            self.obj[name] = Loss(xlabel="Episode", ylabel="Objective value (weighted delay)", title=title, color="orange", show=self.interactive)
         self.obj[name].update(obj)
 
     def save(self):
