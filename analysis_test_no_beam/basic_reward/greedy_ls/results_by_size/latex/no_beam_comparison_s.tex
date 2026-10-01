@@ -1,0 +1,35 @@
+\begin{table*}[p]
+\centering
+\normalsize
+\caption{Complete agent (reward $wT + C_{\max}$): with vs without beam search, Small instances. Only instances where the beam version improved the existing jobs after the cut ($\Delta wT_j^E < 0$) were re-run without beam (local search kept).}
+\label{tab:no_beam_comparison_s}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lllc|cc|cc|cc|cc}
+\toprule
+ & & & & \multicolumn{2}{c}{$\Delta wT_j^E$} & \multicolumn{2}{c}{Nb.\ acc.} & \multicolumn{2}{c}{$wT$ final} & \multicolumn{2}{c}{Time (s)} \\
+\cmidrule(lr){5-6} \cmidrule(lr){7-8} \cmidrule(lr){9-10} \cmidrule(lr){11-12}
+Scenario & Inst. & Tier & $\Delta$ & Beam & No beam & Beam & No beam & Beam & No beam & Beam & No beam \\
+\midrule
+Cost ratio 7/3 & 3 & Early & 0.1 & -3.2 & 0.0 & 1/1 & 0/1 & 42.2 & 11.4 & 6.53 & 1.76 \\
+ & 3 & Early & 0.2 & -19.6 & 0.0 & 1/1 & 0/1 & 25.3 & 11.4 & 4.14 & 1.66 \\
+ & 3 & Early & 0.5 & -19.6 & 0.0 & 1/1 & 0/1 & 25.3 & 11.4 & 4.26 & 1.75 \\
+ & 4 & Middle & 0.2 & -3.9 & -9.2 & 1/1 & 1/1 & 182.0 & 508.5 & 4.55 & 3.44 \\
+ & 4 & Middle & 0.5 & -3.9 & -9.2 & 1/1 & 1/1 & 182.0 & 508.5 & 4.47 & 3.36 \\
+ & 8 & Early & 0.1 & -6.6 & -9.4 & 1/1 & 1/1 & 138.2 & 189.6 & 7.83 & 2.84 \\
+ & 8 & Early & 0.2 & -6.6 & -9.4 & 1/1 & 1/1 & 138.2 & 189.6 & 5.21 & 2.86 \\
+ & 8 & Early & 0.5 & -6.6 & -9.4 & 1/1 & 1/1 & 138.2 & 189.6 & 5.21 & 2.84 \\
+ & 14 & Early & 0.1 & -15.5 & 24.6 & 1/1 & 1/1 & 169.6 & 356.4 & 6.37 & 3.44 \\
+ & 14 & Early & 0.2 & -15.5 & 24.6 & 1/1 & 1/1 & 169.6 & 356.4 & 6.50 & 3.53 \\
+ & 14 & Early & 0.5 & -15.5 & 24.6 & 1/1 & 1/1 & 169.6 & 356.4 & 6.50 & 3.58 \\
+ & 14 & Middle & 0.1 & -15.5 & 24.6 & 1/1 & 1/1 & 154.1 & 340.8 & 5.09 & 3.56 \\
+ & 14 & Middle & 0.2 & -15.5 & 24.6 & 1/1 & 1/1 & 154.1 & 340.8 & 4.98 & 3.56 \\
+ & 14 & Middle & 0.5 & -15.5 & 24.6 & 1/1 & 1/1 & 154.1 & 340.8 & 5.07 & 3.56 \\
+ & 17 & Early & 0.1 & -1.9 & 0.0 & 1/1 & 1/1 & 15.4 & 17.4 & 1.96 & 1.62 \\
+ & 17 & Early & 0.2 & -1.9 & 0.0 & 1/1 & 1/1 & 15.4 & 17.4 & 2.01 & 1.65 \\
+ & 17 & Early & 0.5 & -1.9 & 0.0 & 1/1 & 1/1 & 15.4 & 17.4 & 2.16 & 1.64 \\
+\midrule
+Avg &  &  &  & -9.9 & 6.0 & -- & -- & 111.1 & 221.4 & 4.87 & 2.74 \\
+\bottomrule
+\end{tabular}%
+}
+\end{table*}
