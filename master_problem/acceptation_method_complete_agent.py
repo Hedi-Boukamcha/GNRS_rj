@@ -352,7 +352,8 @@ def evaluate_subset(base_cut_state: State,
                     device: str, 
                     all_weights: dict, 
                     gantt_dir: str | None = None,
-                    rollout_fn=None) -> tuple[float, float, float, int]:
+                    rollout_fn=None,
+                    epsilon_window: float = 0.2) -> tuple[float, float, float, int, bool]:  # NEW : epsilon_window + window_ok retourné
     if rollout_fn is None:
         rollout_fn = lambda st, t: _greedy_rollout(st, t, agent, device)
     
@@ -395,7 +396,8 @@ def evaluate_subset(base_cut_state: State,
 
     if best_env is None:
         print_state_calendars(cut_state, title=f"| subset={subset_name(subset, new_jobs)} | cut={cut_time} | ECHEC")
-        return float("inf"), float("inf"), float("inf"), float("inf")
+        # return float("inf"), float("inf"), float("inf"), float("inf")  # OLD
+        return float("inf"), float("inf"), float("inf"), float("inf"), False  # NEW
 
     env             = best_env
     existing_jobs   = env.state.job_states[:nb_existing]
@@ -406,6 +408,14 @@ def evaluate_subset(base_cut_state: State,
     print(f"    weights existants: {[round(all_weights[id(j.job)], 4) for j in existing_jobs]}")
     print(f"    weighted tardiness existants: {[round(all_weights[id(j.job)] * j.delay, 4) for j in existing_jobs]}")
     print(f"    cost_existants={cost_existants:.4f}")
+
+    # NEW (tolérance sur la fenêtre promise, utilisée quand le retard initial est nul) : chaque job
+    # existant peut finir en retard d'au plus epsilon_window * (d_j - r_j). Avant, avec un retard initial
+    # nul, le budget cost_ref * (1 + delta) valait 0 : delta n'avait plus aucun effet et une seule unité
+    # de retard sur un job existant suffisait à rejeter le sous-ensemble.
+    window_limits = [epsilon_window * max(0, j.job.due_date - j.job.release_date) for j in existing_jobs]  # NEW
+    window_ok     = all(j.delay <= lim + 1e-9 for j, lim in zip(existing_jobs, window_limits))  # NEW
+    print(f"    fenêtre (eps={epsilon_window}) : retards={[j.delay for j in existing_jobs]} | limites={[round(l, 2) for l in window_limits]} | ok={window_ok}")  # NEW
 
     print(f"    tardiness nouveaux: {[j.delay for j in new_jobs_states]}")
     print(f"    weights nouveaux: {[round(all_weights[id(j.job)], 4) for j in new_jobs_states]}")
@@ -424,11 +434,12 @@ def evaluate_subset(base_cut_state: State,
             f"Subset {s_name} | cut={cut_time} | costE={cost_existants:.2f} | cmax={env.state.cmax}",
             cut_times=[cut_time])
         print(f"    📊 Gantt subset sauvegardé : {gantt_path}")
-    return cost_existants, cost_nouveaux, total_cost, env.state.cmax
+    # return cost_existants, cost_nouveaux, total_cost, env.state.cmax  # OLD
+    return cost_existants, cost_nouveaux, total_cost, env.state.cmax, window_ok  # NEW
 
 # Forward et backward tournent ensemble, niveau par niveau, en partageant les
 # sous-ensembles elagues trouves par l'un ou l'autre sens de recherche.
-def bfs_bidirectional(state: State, new_jobs: list[Job], cut_time: int, agent: Agent, device: str, all_weights: dict, delta_ratio: float = 0.2, gantt_dir: str | None = None, rollout_fn=None) -> list[Job]:
+def bfs_bidirectional(state: State, new_jobs: list[Job], cut_time: int, agent: Agent, device: str, all_weights: dict, delta_ratio: float = 0.2, gantt_dir: str | None = None, rollout_fn=None, epsilon_window: float = 0.2) -> list[Job]:  # NEW : epsilon_window
     nb_existing = len(state.job_states)
     start_time = time.perf_counter()
 
@@ -440,6 +451,18 @@ def bfs_bidirectional(state: State, new_jobs: list[Job], cut_time: int, agent: A
     cost_max = cost_ref * (1 + delta_ratio)
     print("\n  === BFS bidirectionnel (forward + backward) ===")
     print(f"  cost_ref={cost_ref:.4f} | cost_max={cost_max:.4f}")
+
+    # NEW : critère d'acceptation en deux cas.
+    #   - retard initial > 0 : inchangé, cost_existants <= cost_ref * (1 + delta) ;
+    #   - retard initial = 0 : chaque job existant respecte T_j <= epsilon_window * (d_j - r_j).
+    ref_is_zero = cost_ref <= 1e-9  # NEW
+    if ref_is_zero:  # NEW
+        print(f"  retard initial nul -> tolérance sur la fenêtre promise (epsilon={epsilon_window})")  # NEW
+
+    def is_acceptable(cost_existants, window_ok) -> bool:  # NEW
+        if ref_is_zero:
+            return window_ok
+        return cost_existants <= cost_max
 
     def subset_key(subset):
         return frozenset(id(j) for j in subset)
@@ -472,6 +495,7 @@ def bfs_bidirectional(state: State, new_jobs: list[Job], cut_time: int, agent: A
             device, 
             all_weights, 
             gantt_dir=gantt_dir,
+            epsilon_window=epsilon_window,  # NEW,
             rollout_fn=rollout_fn
         )
     best_subset, best_cost, best_cmax = [], cost_ref, cmax_ref
@@ -497,8 +521,10 @@ def bfs_bidirectional(state: State, new_jobs: list[Job], cut_time: int, agent: A
                 if contains_pruned(key):
                     n_skipped += 1
                 else:
-                    cost_existants, _, total_cost, cmax = evaluate(subset)
-                    if cost_existants <= cost_max:
+                    # cost_existants, _, total_cost, cmax = evaluate(subset)  # OLD
+                    # if cost_existants <= cost_max:  # OLD
+                    cost_existants, _, total_cost, cmax, window_ok = evaluate(subset)  # NEW
+                    if is_acceptable(cost_existants, window_ok):  # NEW
                         level_results.append((subset, total_cost, cmax))
                     else:
                         n_pruned += 1
@@ -534,8 +560,10 @@ def bfs_bidirectional(state: State, new_jobs: list[Job], cut_time: int, agent: A
                     n_skipped += 1
                     continue  # sur-ensemble d'un infaisable connu -> inutile d'étendre
 
-                cost_existants, _, total_cost, cmax = evaluate(subset)
-                if cost_existants <= cost_max:
+                # cost_existants, _, total_cost, cmax = evaluate(subset)  # OLD
+                # if cost_existants <= cost_max:  # OLD
+                cost_existants, _, total_cost, cmax, window_ok = evaluate(subset)  # NEW
+                if is_acceptable(cost_existants, window_ok):  # NEW
                     if len(subset) > len(best_subset) or (
                         len(subset) == len(best_subset) and (total_cost, cmax) < (best_cost, best_cmax)
                     ):
@@ -723,7 +751,7 @@ def save_acceptation_analysis_csv(
                 # ""               # ((Tj_final)-(Tj_initial))/(Tj_initial) : pas applicable  # OLD
             ])
    
-def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str, delta_ratio: float = 0.2, gantt_dir: str | None = None, save_step_gantts: bool = False, analysis_dir: str | None = None, use_beam: bool = True, improve: bool = True, beam_width: int = BEAM_WIDTH) -> State:
+def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str, delta_ratio: float = 0.2, gantt_dir: str | None = None, save_step_gantts: bool = False, analysis_dir: str | None = None, use_beam: bool = True, improve: bool = True, beam_width: int = BEAM_WIDTH, epsilon_window: float = 0.2) -> State:  # NEW : epsilon_window
     """
     Pipeline complet : schedule Order 1 puis applique le Master Problem pour chaque order suivant.
     Version complete agent : toutes les cédulations passent par _complete_rollout (beam + recherche locale).
@@ -828,7 +856,8 @@ def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str,
             all_weights,
             delta_ratio,
             gantt_dir=subset_gantt_dir,
-            rollout_fn=rollout_fn
+            rollout_fn=rollout_fn,
+            epsilon_window=epsilon_window  # NEW
         )
         
         print(f"\n  === Résultat Order {order.id} ===")

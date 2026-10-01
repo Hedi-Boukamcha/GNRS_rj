@@ -28,7 +28,9 @@ def run_one_controlled_instance(
     device: str,
     agent_path: str,
     save_step_gantts: bool = False,
-    generate_gantts: bool = True
+    generate_gantts: bool = True,
+    epsilon_window: float = 0.2,  # NEW : tolérance sur la fenêtre promise quand le retard initial est nul
+    analysis_root: str = "analysis"  # NEW : dossier des analyses (avant : toujours "analysis")
 ):
     variant = os.path.splitext(os.path.basename(input_path))[0]
     delta_name = f"delta_{str(delta_ratio).replace('.', '_')}"
@@ -42,7 +44,8 @@ def run_one_controlled_instance(
     )
 
     analysis_dir = os.path.join(
-        "analysis",
+        # "analysis",  # OLD (codé en dur : un test avec d'autres réglages écrasait les analyses existantes)
+        analysis_root,  # NEW
         scenario,
         delta_name,
         inst,
@@ -91,7 +94,8 @@ def run_one_controlled_instance(
         delta_ratio=delta_ratio,
         gantt_dir=gantt_dir,
         save_step_gantts=save_step_gantts,
-        analysis_dir=analysis_dir
+        analysis_dir=analysis_dir,
+        epsilon_window=epsilon_window  # NEW
     )
 
     computing_time = time.perf_counter() - start
@@ -235,7 +239,9 @@ def run_all_controlled_instances(
     scenario_filter: str = None,
     inst_filter: str = None,
     save_step_gantts: bool = False,
-    generate_gantts: bool = True
+    generate_gantts: bool = True,
+    epsilon_window: float = 0.2,  # NEW : tolérance sur la fenêtre promise quand le retard initial est nul
+    analysis_root: str = "analysis"  # NEW : dossier des analyses (avant : toujours "analysis")
 ):
     """
     Lance la méthode d'acceptation sur toutes les instances contenues dans root_dir.
@@ -310,7 +316,9 @@ def run_all_controlled_instances(
                     device=device,
                     agent_path=agent_path,
                     save_step_gantts=save_step_gantts,
-                    generate_gantts=generate_gantts
+                    generate_gantts=generate_gantts,
+                    epsilon_window=epsilon_window,  # NEW
+                    analysis_root=analysis_root  # NEW
                 )
 
             except Exception as e:
@@ -473,6 +481,8 @@ if __name__ == "__main__":
     parser.add_argument("--device", type=str, default="cpu", help="Device utilisé : cpu, cuda ou mps")
     parser.add_argument("--agent_path", type=str, default="data/training_costs/", help="Chemin vers les poids de l'agent")
     parser.add_argument("--save_step_gantts", action="store_true", help="Sauvegarder les Gantt étape par étape")
+    parser.add_argument("--analysis_root", type=str, default="analysis", help="Dossier racine des analyses (summary.csv, tableaux d'acceptation)")  # NEW
+    parser.add_argument("--epsilon", type=float, default=0.2, help="Retard initial nul : chaque job existant peut finir en retard d'au plus epsilon * (d_j - r_j)")  # NEW
     parser.add_argument("--generate_gantts",type=str, choices=["true", "false"], default="true", help="Activer ou désactiver la génération des Gantt")
     args = parser.parse_args()
 
@@ -489,7 +499,9 @@ if __name__ == "__main__":
             scenario_filter=args.scenario_filter,
             inst_filter=args.inst_filter,
             save_step_gantts=args.save_step_gantts,
-            generate_gantts=generate_gantts
+            generate_gantts=generate_gantts,
+            epsilon_window=args.epsilon,  # NEW
+            analysis_root=args.analysis_root  # NEW
         ) 
     else:
         if args.input is None: raise ValueError("En mode one, tu dois fournir --input")
@@ -504,5 +516,7 @@ if __name__ == "__main__":
             device=args.device,
             agent_path=args.agent_path,
             save_step_gantts=args.save_step_gantts,
-            generate_gantts=generate_gantts
+            generate_gantts=generate_gantts,
+            epsilon_window=args.epsilon,  # NEW
+            analysis_root=args.analysis_root  # NEW
         )

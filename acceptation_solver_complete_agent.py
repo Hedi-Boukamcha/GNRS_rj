@@ -39,7 +39,8 @@ def run_one_controlled_instance(
     use_beam: bool = True,
     improve: bool = True,
     beam_width: int = BEAM_WIDTH,
-    analysis_root: str = ANALYSIS_ROOT  # NEW : dossier des analyses (avant : toujours ANALYSIS_ROOT)
+    analysis_root: str = ANALYSIS_ROOT,  # NEW : dossier des analyses (avant : toujours ANALYSIS_ROOT)
+    epsilon_window: float = 0.2  # NEW : tolérance sur la fenêtre promise quand le retard initial est nul
 ):
     variant = os.path.splitext(os.path.basename(input_path))[0]
     delta_name = f"delta_{str(delta_ratio).replace('.', '_')}"
@@ -104,6 +105,7 @@ def run_one_controlled_instance(
         gantt_dir=gantt_dir,
         save_step_gantts=save_step_gantts,
         analysis_dir=analysis_dir,
+        epsilon_window=epsilon_window,  # NEW
         use_beam=use_beam,
         improve=improve,
         beam_width=beam_width
@@ -254,7 +256,8 @@ def run_all_controlled_instances(
     use_beam: bool = True,
     improve: bool = True,
     beam_width: int = BEAM_WIDTH,
-    analysis_root: str = ANALYSIS_ROOT  # NEW
+    analysis_root: str = ANALYSIS_ROOT,  # NEW
+    epsilon_window: float = 0.2  # NEW
 ):
     """
     Lance la méthode d'acceptation sur toutes les instances contenues dans root_dir.
@@ -333,7 +336,8 @@ def run_all_controlled_instances(
                     use_beam=use_beam,
                     improve=improve,
                     beam_width=beam_width,
-                    analysis_root=analysis_root  # NEW
+                    analysis_root=analysis_root,  # NEW
+                    epsilon_window=epsilon_window  # NEW
                 )
 
             except Exception as e:
@@ -500,6 +504,27 @@ def run_all_controlled_instances(
 # agent without cmax
 # python3 acceptation_solver_complete_agent.py --mode all --root_dir "data/controlled_orders_ub/test/s" --output_root "results/controlled_orders_complete_agent_no_cmax/test" --analysis_root "analysis_complete_agent_no_cmax" --deltas 0.1 0.2 0.5 --device cpu --agent_path "data/training_ub_no_cmax/" --generate_gantts true --beam true --improve true
 
+
+# ====== TEST nouvel critere avec due date par instance
+
+# exp d'instance:
+# /s/portion_of_7_3/instance_5_middle.json
+# /s/same_costs/instance_3_early.json
+
+# complete agent avec reward de base (Tj + Cmax)
+# ancien sans critere due date
+# python3 acceptation_solver_complete_agent.py --mode one --input "data/controlled_orders_ub/test/s/same_costs/instance_3_early.json" --scenario s --inst same_costs --delta_ratio 0.1 --device cpu --agent_path "data/training_costs_ub/" --output_root "results/test_epsilon/basic_reward/eps_0/test" --analysis_root "analysis_test_epsilon/basic_reward/eps_0" --epsilon 0 --generate_gantts true
+# nouveau avec critere due date
+# python3 acceptation_solver_complete_agent.py --mode one --input "data/controlled_orders_ub/test/s/same_costs/instance_3_early.json" --scenario s --inst same_costs --delta_ratio 0.1 --device cpu --agent_path "data/training_costs_ub/" --output_root "results/test_epsilon/basic_reward/eps_0_2/test" --analysis_root "analysis_test_epsilon/basic_reward/eps_0_2" --epsilon 0.2 --generate_gantts true
+
+# complete agent avec reward sur Tj
+# ancien sans critere due date
+# python3 acceptation_solver_complete_agent.py --mode one --input "data/controlled_orders_ub/test/s/same_costs/instance_3_early.json" --scenario s --inst same_costs --delta_ratio 0.1 --device cpu --agent_path "data/training_ub_no_cmax/" --output_root "results/test_epsilon/no_cmax/eps_0/test" --analysis_root "analysis_test_epsilon/no_cmax/eps_0" --epsilon 0 --generate_gantts true
+# nouveau avec critere due date
+# python3 acceptation_solver_complete_agent.py --mode one --input "data/controlled_orders_ub/test/s/same_costs/instance_3_early.json" --scenario s --inst same_costs --delta_ratio 0.1 --device cpu --agent_path "data/training_ub_no_cmax/" --output_root "results/test_epsilon/no_cmax/eps_0_2/test" --analysis_root "analysis_test_epsilon/no_cmax/eps_0_2" --epsilon 0.2 --generate_gantts true
+
+# ================
+
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
@@ -520,6 +545,7 @@ if __name__ == "__main__":
     parser.add_argument("--beam", type=str, choices=["true", "false"], default="true", help="Utiliser le beam search guidé par le GNN")
     parser.add_argument("--improve", type=str, choices=["true", "false"], default="true", help="Appliquer la recherche locale au cut sur les solutions terminées")
     parser.add_argument("--beam_width", type=int, default=BEAM_WIDTH, help="Largeur du beam")
+    parser.add_argument("--epsilon", type=float, default=0.2, help="Retard initial nul : chaque job existant peut finir en retard d'au plus epsilon * (d_j - r_j)")  # NEW
     parser.add_argument("--analysis_root", type=str, default=ANALYSIS_ROOT, help="Dossier racine des analyses (summary.csv, tableaux d'acceptation)")  # NEW
     parser.add_argument("--num_cpus", type=int, default=8, help="Nombre de CPU pour Ray (expansion du beam)")
     args = parser.parse_args()
@@ -544,7 +570,8 @@ if __name__ == "__main__":
             use_beam=use_beam,
             improve=improve,
             beam_width=args.beam_width,
-            analysis_root=args.analysis_root  # NEW
+            analysis_root=args.analysis_root,  # NEW
+            epsilon_window=args.epsilon  # NEW
         ) 
     else:
         if args.input is None: raise ValueError("En mode one, tu dois fournir --input")
@@ -563,5 +590,6 @@ if __name__ == "__main__":
             use_beam=use_beam,
             improve=improve,
             beam_width=args.beam_width,
-            analysis_root=args.analysis_root  # NEW
+            analysis_root=args.analysis_root,  # NEW
+            epsilon_window=args.epsilon  # NEW
         )
