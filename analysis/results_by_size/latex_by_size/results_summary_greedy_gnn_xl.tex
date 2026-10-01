@@ -1,0 +1,25 @@
+\begin{table*}[p]
+\centering
+\large
+\caption{Greedy GNN -- summary results for X-Large instances: minimum, average and maximum per scenario and cut-time tier, by acceptance-tolerance level $\Delta$.}
+\label{tab:results_summary_greedy_gnn_xl}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{ll|ccccccccc}
+\toprule
+ & & \multicolumn{9}{c}{$\Delta=0.1$} \\
+\cmidrule(lr){3-11}
+ & & \multicolumn{3}{c}{$\Delta wT_j^E$} & \multicolumn{3}{c}{Acc.\ (\%)} & \multicolumn{3}{c}{Time (s)} \\
+\cmidrule(lr){3-5} \cmidrule(lr){6-8} \cmidrule(lr){9-11}
+Scenario & Tier & Min & Avg & Max & Min & Avg & Max & Min & Avg & Max \\
+\midrule
+Same costs & Early & -85.0 & -85.0 & -85.0 & 10 & 10 & 10 & 1564.16 & 1564.16 & 1564.16 \\
+ & Middle & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+ & Late & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+\midrule
+Cost ratio 3/7 & Early & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+ & Middle & 331.2 & 331.2 & 331.2 & 100 & 100 & 100 & 2.14 & 2.14 & 2.14 \\
+ & Late & 0.0 & 0.0 & 0.0 & 100 & 100 & 100 & 1.44 & 1.44 & 1.44 \\
+\bottomrule
+\end{tabular}%
+}
+\end{table*}

@@ -525,6 +525,11 @@ def run_all_controlled_instances(
 
 # ================
 
+
+# test without beam search
+# python3 acceptation_solver_complete_agent.py --mode one --input "data/controlled_orders_ub/test/m/same_costs/instance_7_early.json" --scenario m --inst same_costs --delta_ratio 0.1 --device cpu --agent_path "data/training_ub_no_cmax/" --output_root "results/test_no_beam/greedy_ls/test" --analysis_root "analysis_test_no_beam/greedy_ls" --beam false --improve true --generate_gantts true
+
+
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
