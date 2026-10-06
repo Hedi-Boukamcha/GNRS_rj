@@ -1,0 +1,79 @@
+{
+    "a": 70,
+    "scenario": "diff_costs_7_3",
+    "ub_cmax_order_1": 159,
+    "ub_cmax_order_1_2": 286,
+    "arrival_variant": "late",
+    "arrival_cut_time": 148,
+    "orders": [
+        {
+            "id": 1,
+            "cut_time": 0,
+            "jobs": [
+                {
+                    "big": 1,
+                    "pos_time": 5,
+                    "status": 0,
+                    "blocked": 0,
+                    "cost": 0.8145,
+                    "operations": [
+                        {
+                            "type": 0,
+                            "processing_time": 10
+                        }
+                    ],
+                    "release_date": 30,
+                    "due_date": 95
+                },
+                {
+                    "big": 0,
+                    "pos_time": 5,
+                    "status": 0,
+                    "blocked": 0,
+                    "cost": 0.8355,
+                    "operations": [
+                        {
+                            "type": 0,
+                            "processing_time": 35
+                        },
+                        {
+                            "type": 1,
+                            "processing_time": 58
+                        }
+                    ],
+                    "release_date": 41,
+                    "due_date": 177
+                }
+            ]
+        },
+        {
+            "id": 2,
+            "cut_time": 148,
+            "jobs": [
+                {
+                    "big": 0,
+                    "pos_time": 5,
+                    "status": 0,
+                    "blocked": 0,
+                    "cost": 0.0838,
+                    "operations": [
+                        {
+                            "type": 0,
+                            "processing_time": 52
+                        },
+                        {
+                            "type": 1,
+                            "processing_time": 46
+                        }
+                    ],
+                    "release_date": 172,
+                    "due_date": 290
+                }
+            ]
+        }
+    ],
+    "cost_family": "diff_costs",
+    "total_jobs": 3,
+    "nb_existing_jobs": 2,
+    "nb_new_jobs": 1
+}

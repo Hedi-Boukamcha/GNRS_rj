@@ -1,0 +1,71 @@
+{
+    "a": 0,
+    "scenario": "diff_costs_5_5",
+    "ub_cmax_order_1": 97,
+    "ub_cmax_order_1_2": 146,
+    "arrival_variant": "middle",
+    "arrival_cut_time": 39,
+    "orders": [
+        {
+            "id": 1,
+            "cut_time": 0,
+            "jobs": [
+                {
+                    "big": 0,
+                    "pos_time": 5,
+                    "status": 0,
+                    "blocked": 0,
+                    "cost": 0.8779,
+                    "operations": [
+                        {
+                            "type": 1,
+                            "processing_time": 26
+                        }
+                    ],
+                    "release_date": 25,
+                    "due_date": 72
+                },
+                {
+                    "big": 1,
+                    "pos_time": 5,
+                    "status": 0,
+                    "blocked": 0,
+                    "cost": 0.9588,
+                    "operations": [
+                        {
+                            "type": 1,
+                            "processing_time": 34
+                        }
+                    ],
+                    "release_date": 17,
+                    "due_date": 66
+                }
+            ]
+        },
+        {
+            "id": 2,
+            "cut_time": 39,
+            "jobs": [
+                {
+                    "big": 0,
+                    "pos_time": 5,
+                    "status": 0,
+                    "blocked": 0,
+                    "cost": 0.2684,
+                    "operations": [
+                        {
+                            "type": 0,
+                            "processing_time": 39
+                        }
+                    ],
+                    "release_date": 48,
+                    "due_date": 99
+                }
+            ]
+        }
+    ],
+    "cost_family": "diff_costs",
+    "total_jobs": 3,
+    "nb_existing_jobs": 2,
+    "nb_new_jobs": 1
+}
