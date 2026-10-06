@@ -529,6 +529,23 @@ def run_all_controlled_instances(
 # test without beam search
 # python3 acceptation_solver_complete_agent.py --mode one --input "data/controlled_orders_ub/test/m/same_costs/instance_7_early.json" --scenario m --inst same_costs --delta_ratio 0.1 --device cpu --agent_path "data/training_ub_no_cmax/" --output_root "results/test_no_beam/greedy_ls/test" --analysis_root "analysis_test_no_beam/greedy_ls" --beam false --improve true --generate_gantts true
 
+# =================
+# complete agent with basic reward
+# =================
+# python3 acceptation_solver_complete_agent.py --mode all --root_dir "data/controlled_orders_paired/test/s" --output_root "results/paired_complete_agent/test" --analysis_root "analysis_paired_complete_agent" --deltas 0.1 0.2 0.5 --device cpu --agent_path "data/training_costs_ub/" --generate_gantts true --beam true --improve true
+# python3 acceptation_solver_complete_agent.py --mode all --root_dir "data/controlled_orders_paired/test/m" --output_root "results/paired_complete_agent/test" --analysis_root "analysis_paired_complete_agent" --deltas 0.1 0.2 0.5 --device cpu --agent_path "data/training_costs_ub/" --generate_gantts true --beam true --improve true
+# python3 acceptation_solver_complete_agent.py --mode all --root_dir "data/controlled_orders_paired/test/l" --output_root "results/paired_complete_agent/test" --analysis_root "analysis_paired_complete_agent" --deltas 0.1 0.2 0.5 --device cpu --agent_path "data/training_costs_ub/" --generate_gantts true --beam true --improve false
+# python3 acceptation_solver_complete_agent.py --mode all --root_dir "data/controlled_orders_paired/test/xl" --output_root "results/paired_complete_agent/test" --analysis_root "analysis_paired_complete_agent" --deltas 0.1 0.2 0.5 --device cpu --agent_path "data/training_costs_ub/" --generate_gantts false --beam true --improve false
+
+
+# =================
+# complete agent with new reward
+# =================
+# python3 acceptation_solver_complete_agent.py --mode all --root_dir "data/controlled_orders_paired/test/s" --output_root "results/paired_complete_agent_no_cmax/test" --analysis_root "analysis_paired_complete_agent_no_cmax" --deltas 0.1 0.2 0.5 --device cpu --agent_path "data/training_ub_no_cmax/" --generate_gantts true --beam true --improve true
+# python3 acceptation_solver_complete_agent.py --mode all --root_dir "data/controlled_orders_paired/test/m" --output_root "results/paired_complete_agent_no_cmax/test" --analysis_root "analysis_paired_complete_agent_no_cmax" --deltas 0.1 0.2 0.5 --device cpu --agent_path "data/training_ub_no_cmax/" --generate_gantts true --beam true --improve true
+# python3 acceptation_solver_complete_agent.py --mode all --root_dir "data/controlled_orders_paired/test/l" --output_root "results/paired_complete_agent_no_cmax/test" --analysis_root "analysis_paired_complete_agent_no_cmax" --deltas 0.1 0.2 0.5 --device cpu --agent_path "data/training_ub_no_cmax/" --generate_gantts true --beam true --improve false
+# python3 acceptation_solver_complete_agent.py --mode all --root_dir "data/controlled_orders_paired/test/xl" --output_root "results/paired_complete_agent_no_cmax/test" --analysis_root "analysis_paired_complete_agent_no_cmax" --deltas 0.1 0.2 0.5 --device cpu --agent_path "data/training_ub_no_cmax/" --generate_gantts false --beam true --improve false
+
 
 if __name__ == "__main__":
 
