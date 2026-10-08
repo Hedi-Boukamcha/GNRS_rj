@@ -10,6 +10,7 @@
 # Exemples :
 #   python3 build_latex_tables_by_size_methods.py                       # toutes les versions de METHODS trouvées
 #   python3 build_latex_tables_by_size_methods.py --methods complete_agent_no_cmax
+#   python3 build_latex_tables_by_size_methods.py --methods paired_complete_agent paired_complete_agent_no_cmax paired_no_beam_basic_reward paired_no_beam_no_cmax
 #   python3 build_latex_tables_by_size_methods.py --root analysis_test_no_beam/greedy_ls --name greedy_ls --title "Complete agent without beam"
 # Packages LaTeX requis : booktabs, graphicx
 import argparse
@@ -24,6 +25,11 @@ METHODS = {
     "greedy_gnn":             ("analysis",                        "Greedy GNN"),
     "complete_agent":         ("analysis_complete_agent",         r"Complete agent (reward $wT + C_{\max}$)"),
     "complete_agent_no_cmax": ("analysis_complete_agent_no_cmax", r"Complete agent (reward $wT$ only)"),
+    # NEW : instances appariées same/diff (instance_generator_paired.py)
+    "paired_complete_agent":         ("analysis_paired_complete_agent",         r"Complete agent (reward $wT + C_{\max}$)"),
+    "paired_complete_agent_no_cmax": ("analysis_paired_complete_agent_no_cmax", r"Complete agent (reward $wT$ only)"),
+    "paired_no_beam_basic_reward":   ("analysis_paired_no_beam/basic_reward",   r"Complete agent without beam (reward $wT + C_{\max}$)"),
+    "paired_no_beam_no_cmax":        ("analysis_paired_no_beam/no_cmax",        r"Complete agent without beam (reward $wT$ only)"),
 }
 
 TABLE_FONT_SIZE = r"\large"
@@ -33,11 +39,24 @@ SIZE_LABEL = {"s": "Small", "m": "Medium", "l": "Large", "xl": "X-Large"}
 CUT_TIME_ORDER = ["early", "middle", "late"]
 CUT_TIME_LABEL = {"early": "Early", "middle": "Middle", "late": "Late"}
 
-SCENARIO_ORDER = ["same_costs", "portion_of_3_7", "portion_of_7_3"]
+SCENARIO_ORDER = [
+    "same_costs", "portion_of_3_7", "portion_of_7_3",
+    # NEW : scénarios appariés, same et diff côte à côte pour chaque proportion E/N
+    "same_costs_5_5", "diff_costs_5_5",
+    "same_costs_3_7", "diff_costs_3_7",
+    "same_costs_7_3", "diff_costs_7_3",
+]
 SCENARIO_LABEL = {
     "same_costs":     "Same costs",
     "portion_of_3_7": "Cost ratio 3/7",
     "portion_of_7_3": "Cost ratio 7/3",
+    # NEW : E/N = proportion de jobs existants / nouveaux
+    "same_costs_5_5": "Same costs, E/N 5/5",
+    "diff_costs_5_5": "Diff. costs, E/N 5/5",
+    "same_costs_3_7": "Same costs, E/N 3/7",
+    "diff_costs_3_7": "Diff. costs, E/N 3/7",
+    "same_costs_7_3": "Same costs, E/N 7/3",
+    "diff_costs_7_3": "Diff. costs, E/N 7/3",
 }
 
 METRICS = [

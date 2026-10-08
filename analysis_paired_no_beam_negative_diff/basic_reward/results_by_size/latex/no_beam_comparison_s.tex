@@ -1,0 +1,21 @@
+\begin{table*}[p]
+\centering
+\normalsize
+\caption{Complete agent (reward $wT + C_{\max}$): with vs without beam search, Small instances. Only instances where the beam version improved the existing jobs after the cut ($\Delta wT_j^E < 0$) were re-run without beam (local search kept).}
+\label{tab:no_beam_comparison_s}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lllc|cc|cc|cc|cc}
+\toprule
+ & & & & \multicolumn{2}{c}{$\Delta wT_j^E$} & \multicolumn{2}{c}{Nb.\ acc.} & \multicolumn{2}{c}{$wT$ final} & \multicolumn{2}{c}{Time (s)} \\
+\cmidrule(lr){5-6} \cmidrule(lr){7-8} \cmidrule(lr){9-10} \cmidrule(lr){11-12}
+Scenario & Inst. & Tier & $\Delta$ & Beam & No beam & Beam & No beam & Beam & No beam & Beam & No beam \\
+\midrule
+Diff. costs, E/N 7/3 & 13 & Early & 0.1 & -35.2 & 0.0 & 1/1 & 0/1 & 32.6 & 45.3 & 3.92 & 2.18 \\
+ & 13 & Early & 0.2 & -35.2 & 0.0 & 1/1 & 0/1 & 32.6 & 45.3 & 3.86 & 2.18 \\
+ & 13 & Early & 0.5 & -35.2 & 0.0 & 1/1 & 0/1 & 32.6 & 45.3 & 3.92 & 2.25 \\
+\midrule
+Avg &  &  &  & -35.2 & 0.0 & -- & -- & 32.6 & 45.3 & 3.90 & 2.21 \\
+\bottomrule
+\end{tabular}%
+}
+\end{table*}

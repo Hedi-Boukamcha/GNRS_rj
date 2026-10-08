@@ -12,13 +12,16 @@
 #   - <no_beam_root>/results_by_size/csv/no_beam_comparison.csv
 #
 # RUN : python3 build_latex_no_beam_comparison.py
+# Instances appariées :
+#   python3 build_latex_no_beam_comparison.py --paired --beam_root analysis_paired_complete_agent_no_cmax --no_beam_root analysis_paired_no_beam_negative_diff/no_cmax
+#   python3 build_latex_no_beam_comparison.py --paired --beam_root analysis_paired_complete_agent --no_beam_root analysis_paired_no_beam_negative_diff/basic_reward --beam_title "Complete agent (reward $wT + C_{\max}$)"
 # Packages LaTeX requis : booktabs, graphicx
 import argparse
 from pathlib import Path
 
 import pandas as pd
 
-from build_analysis_tables import build_master_table  # même calcul de delta_tjE que les autres tables
+from build_analysis_tables import build_master_table, UB_ROOT, PAIRED_ROOT  # même calcul de delta_tjE que les autres tables
 
 REPO_ROOT = Path(__file__).resolve().parent
 
@@ -26,8 +29,13 @@ TABLE_FONT_SIZE = r"\normalsize"
 SIZE_LABEL = {"s": "Small", "m": "Medium", "l": "Large", "xl": "X-Large"}
 CUT_TIME_ORDER = ["early", "middle", "late"]
 CUT_TIME_LABEL = {"early": "Early", "middle": "Middle", "late": "Late"}
-SCENARIO_ORDER = ["same_costs", "portion_of_3_7", "portion_of_7_3"]
-SCENARIO_LABEL = {"same_costs": "Same costs", "portion_of_3_7": "Cost ratio 3/7", "portion_of_7_3": "Cost ratio 7/3"}
+SCENARIO_ORDER = ["same_costs", "portion_of_3_7", "portion_of_7_3",
+                  # NEW : scénarios appariés (instance_generator_paired.py)
+                  "same_costs_5_5", "diff_costs_5_5", "same_costs_3_7", "diff_costs_3_7", "same_costs_7_3", "diff_costs_7_3"]
+SCENARIO_LABEL = {"same_costs": "Same costs", "portion_of_3_7": "Cost ratio 3/7", "portion_of_7_3": "Cost ratio 7/3",
+                  "same_costs_5_5": "Same costs, E/N 5/5", "diff_costs_5_5": "Diff. costs, E/N 5/5",
+                  "same_costs_3_7": "Same costs, E/N 3/7", "diff_costs_3_7": "Diff. costs, E/N 3/7",
+                  "same_costs_7_3": "Same costs, E/N 7/3", "diff_costs_7_3": "Diff. costs, E/N 7/3"}
 
 KEYS = ["size", "cost_variant", "delta_ratio", "instance", "cut_time_pos"]
 
@@ -40,9 +48,9 @@ METRICS = [
 ]
 
 
-def load(beam_root: Path, no_beam_root: Path) -> pd.DataFrame:
+def load(beam_root: Path, no_beam_root: Path, data_root: Path = UB_ROOT) -> pd.DataFrame:
     beam = pd.read_csv(beam_root / "results_by_size" / "csv" / "results_all_sizes.csv")
-    no_beam = build_master_table(no_beam_root)
+    no_beam = build_master_table(no_beam_root, data_root)  # NEW : data_root (coûts des jobs existants)
     cols = KEYS + [m for m, _, _ in METRICS]
     beam = beam[cols].copy()
     no_beam = no_beam[cols].copy()
@@ -132,10 +140,11 @@ def main() -> None:
     parser.add_argument("--beam_root", type=str, default="analysis_complete_agent_no_cmax", help="Analyses de l'agent complet avec beam")
     parser.add_argument("--no_beam_root", type=str, default="analysis_test_no_beam/greedy_ls", help="Analyses des relances sans beam")
     parser.add_argument("--beam_title", type=str, default=r"Complete agent (reward $wT$ only)", help="Nom de l'agent affiché dans le titre")
+    parser.add_argument("--paired", action="store_true", help="Instances appariées : lire les coûts dans data/controlled_orders_paired/test")  # NEW
     args = parser.parse_args()
 
     beam_root, no_beam_root = REPO_ROOT / args.beam_root, REPO_ROOT / args.no_beam_root
-    df = load(beam_root, no_beam_root)
+    df = load(beam_root, no_beam_root, PAIRED_ROOT if args.paired else UB_ROOT)
 
     csv_dir = no_beam_root / "results_by_size" / "csv"
     latex_dir = no_beam_root / "results_by_size" / "latex"
