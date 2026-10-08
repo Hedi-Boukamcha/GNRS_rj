@@ -18,12 +18,20 @@ REPO_ROOT     = Path(__file__).resolve().parent
 #   - analysis/                : ancienne version (GNN glouton, acceptation_solver.py)
 #   - analysis_complete_agent/ : nouvelle version (complete agent, acceptation_solver_complete_agent.py)
 # Chaque dossier reçoit ses propres tables dans <dossier>/results_by_size/csv/.
-ANALYSIS_ROOTS = [
-    REPO_ROOT / "analysis",
-    REPO_ROOT / "analysis_complete_agent",
-    REPO_ROOT / "analysis_complete_agent_no_cmax",
-]
 UB_ROOT       = REPO_ROOT / "data" / "controlled_orders_ub" / "test"
+PAIRED_ROOT   = REPO_ROOT / "data" / "controlled_orders_paired" / "test"  # NEW : instance_generator_paired.py
+# NEW : chaque dossier d'analyse est associé au dossier d'instances où lire les coûts des jobs
+# existants (delta_tjE). Avant, tout était lu dans UB_ROOT, ce qui donnait des coûts faux (ou absents)
+# pour les instances appariées same/diff.
+ANALYSIS_ROOTS = [
+    (REPO_ROOT / "analysis", UB_ROOT),
+    (REPO_ROOT / "analysis_complete_agent", UB_ROOT),
+    (REPO_ROOT / "analysis_complete_agent_no_cmax", UB_ROOT),
+    (REPO_ROOT / "analysis_paired_complete_agent", PAIRED_ROOT),
+    (REPO_ROOT / "analysis_paired_complete_agent_no_cmax", PAIRED_ROOT),
+    (REPO_ROOT / "analysis_paired_no_beam" / "basic_reward", PAIRED_ROOT),
+    (REPO_ROOT / "analysis_paired_no_beam" / "no_cmax", PAIRED_ROOT),
+]
 
 CUT_TIME_ORDER = ["early", "middle", "late"]
 INSTANCE_DIR_RE = re.compile(r"^instance_(\d+)_(early|middle|late)$")
@@ -72,10 +80,10 @@ def read_order2_csv(order2_csv: Path) -> pd.DataFrame:
     return pd.read_csv(StringIO("\n".join(fixed)))
 
 
-def existing_job_costs(size: str, cost_variant: str, instance: int, cut_time_pos: str) -> dict[str, float]:
+def existing_job_costs(size: str, cost_variant: str, instance: int, cut_time_pos: str, data_root: Path = UB_ROOT) -> dict[str, float]:
     """Cost of each existing job (order 1), keyed as 'J1', 'J2', ... to match
     the 'job' column of order_2_acceptance_analysis.csv."""
-    json_path = UB_ROOT / size / cost_variant / f"instance_{instance}_{cut_time_pos}.json"
+    json_path = data_root / size / cost_variant / f"instance_{instance}_{cut_time_pos}.json"
     if not json_path.exists():
         return {}
     with open(json_path) as f:
@@ -100,7 +108,7 @@ def weighted_sum_delta_tjE(order2_csv: Path, job_costs: dict[str, float]) -> flo
     return weighted.sum() if not weighted.isna().all() else None
 
 
-def build_master_table(analysis_root: Path) -> pd.DataFrame:
+def build_master_table(analysis_root: Path, data_root: Path = UB_ROOT) -> pd.DataFrame:
     rows = []
     for summary_csv in analysis_root.glob("*/delta_*/*/instance_*/summary.csv"):
         parsed = parse_summary_path(summary_csv)
@@ -115,7 +123,7 @@ def build_master_table(analysis_root: Path) -> pd.DataFrame:
         row.update(parsed)
 
         order2_csv = summary_csv.parent / "order_2_acceptance_analysis.csv"
-        job_costs = existing_job_costs(parsed["size"], parsed["cost_variant"], parsed["instance"], parsed["cut_time_pos"])
+        job_costs = existing_job_costs(parsed["size"], parsed["cost_variant"], parsed["instance"], parsed["cut_time_pos"], data_root)
         row["delta_tjE"] = weighted_sum_delta_tjE(order2_csv, job_costs)
 
         rows.append(row)
@@ -142,13 +150,13 @@ def write_tables_per_size_and_scenario(master: pd.DataFrame, csv_dir: Path) -> N
 
 # RUN: python3 build_analysis_tables.py
 if __name__ == "__main__":
-    for analysis_root in ANALYSIS_ROOTS:
-        print(f"\n[INFO] ===== {analysis_root.name} =====")
+    for analysis_root, data_root in ANALYSIS_ROOTS:
+        print(f"\n[INFO] ===== {analysis_root.relative_to(REPO_ROOT)} (instances : {data_root.relative_to(REPO_ROOT)}) =====")
         if not analysis_root.exists():
             print(f"[WARN] dossier absent, ignoré : {analysis_root}")
             continue
         try:
-            master_df = build_master_table(analysis_root)
+            master_df = build_master_table(analysis_root, data_root)
         except RuntimeError as e:
             print(f"[WARN] {e} -> ignoré")
             continue
