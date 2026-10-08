@@ -1272,6 +1272,39 @@ def _cut_job_final_return(j: JobState, original_job: JobState, move_event, new_s
     new_state.robot.location = new_state.all_stations
 
 
+def _pos_exec_event(original_job: JobState, pos_event):  # NEW
+    """EXECUTE parallèle sur M1 qui suit un POS dans la cédule d'origine (même op), ou None."""
+    return next((e for e in original_job.calendar.events
+                 if e.event_type == EXECUTE and e.operation is not None
+                 and e.operation.id == pos_event.operation.id
+                 and e.dest is not None and e.dest.position_type == POS_MACHINE_1
+                 and e.start >= pos_event.end), None)
+
+
+def _cut_job_pos_committed(j: JobState, exec_event, new_state: State, cut_time: int):  # NEW
+    """
+    BUG FIX (soudure jamais exécutée, ex. paired m/diff_costs_5_5/instance_19_early, cut=59 : J2
+    positionné sur M1 58-63, soudure parallèle prévue 63-113). Avant : le POS en cours au cut était
+    gardé mais l'opération remise à NOT_YET pour être redécidée après le cut. Le job restait garé sur
+    le positionneur ; la première décision suivante visant M1 appelait previous_job_back_to_station,
+    qui le ramenait à la station, marquait l'op DONE (o.end = 0 <= fin du MOVE) et le déchargeait
+    sans EXECUTE. Tous les jobs existants finissaient alors plus tôt (delta_tjE < 0 artificiel).
+    Maintenant : un POS commencé avant le cut engage l'opération parallèle sur M1 (POS et EXECUTE
+    font partie de la même décision, et M1 ne peut servir à personne tant que la pièce est sur le
+    positionneur). On garde l'EXECUTE d'origine, comme pour un EXECUTE déjà en cours au cut.
+    """
+    op = j.get_operation(exec_event.operation.id)
+    m1 = new_state.machine1
+    j.calendar.events.append(Event(start=exec_event.start, end=exec_event.end, event_type=EXECUTE, job=j,
+                                   source=m1, dest=m1, operation=op, station=None))
+    m1.calendar.events.append(Event(start=exec_event.start, end=exec_event.end, event_type=EXECUTE, job=j,
+                                    source=m1, dest=m1, operation=op, station=None))
+    m1.free_at = max(m1.free_at, exec_event.end)
+    _cut_job_in_execution(j, exec_event, new_state, cut_time)
+    # la soudure n'a pas commencé : il en reste au plus processing_time (pas exec.end - cut_time)
+    op.remaining_time = min(op.operation.processing_time, max(0, exec_event.end - cut_time))
+
+
 def _cut_job(j: JobState, original_job: JobState, new_state: State, cut_time: int):
     """Reconstruit l'état d'un job au cut_time."""
     j.calendar.events     = _cut_filter(j.calendar.events, cut_time, keep_in_progress=True)
@@ -1291,6 +1324,11 @@ def _cut_job(j: JobState, original_job: JobState, new_state: State, cut_time: in
           and in_progress_event.dest is not None and in_progress_event.dest.position_type == POS_STATION  # NEW
           and not _has_remaining_ops_at(j, cut_time)):  # NEW
         _cut_job_final_return(j, original_job, in_progress_event, new_state)  # NEW
+    elif (in_progress_event is not None and in_progress_event.event_type == POS  # NEW
+          and in_progress_event.operation is not None  # NEW
+          and _pos_exec_event(original_job, in_progress_event) is not None):  # NEW
+        # OLD : passait par _cut_job_in_execution (branche POS : op remise à NOT_YET, redécidée après le cut)
+        _cut_job_pos_committed(j, _pos_exec_event(original_job, in_progress_event), new_state, cut_time)  # NEW
     elif in_progress_event is not None:
         _cut_job_in_execution(j, in_progress_event, new_state, cut_time)
     else:

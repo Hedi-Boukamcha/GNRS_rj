@@ -32,6 +32,8 @@ ANALYSIS_ROOTS = [
     (REPO_ROOT / "analysis_paired_no_beam" / "basic_reward", PAIRED_ROOT),
     (REPO_ROOT / "analysis_paired_no_beam" / "no_cmax", PAIRED_ROOT),
 ]
+# NEW : tests d'epsilon sur les instances appariées (run_epsilon_paired.py), un dossier par reward et par epsilon
+ANALYSIS_ROOTS += [(d, PAIRED_ROOT) for d in sorted((REPO_ROOT / "analysis_paired_epsilon").glob("*/eps_*")) if d.is_dir()]
 
 CUT_TIME_ORDER = ["early", "middle", "late"]
 INSTANCE_DIR_RE = re.compile(r"^instance_(\d+)_(early|middle|late)$")
