@@ -1,0 +1,81 @@
+{
+    "a": 30,
+    "scenario": "same_costs_5_5",
+    "ub_cmax_order_1": 117,
+    "ub_cmax_order_1_2": 153,
+    "arrival_variant": "early",
+    "arrival_cut_time": 16,
+    "orders": [
+        {
+            "id": 1,
+            "cut_time": 0,
+            "jobs": [
+                {
+                    "big": 0,
+                    "pos_time": 5,
+                    "status": 0,
+                    "blocked": 0,
+                    "cost": 1.0,
+                    "operations": [
+                        {
+                            "type": 1,
+                            "processing_time": 18
+                        },
+                        {
+                            "type": 0,
+                            "processing_time": 10
+                        }
+                    ],
+                    "release_date": 24,
+                    "due_date": 117
+                },
+                {
+                    "big": 1,
+                    "pos_time": 5,
+                    "status": 0,
+                    "blocked": 0,
+                    "cost": 1.0,
+                    "operations": [
+                        {
+                            "type": 0,
+                            "processing_time": 39
+                        }
+                    ],
+                    "release_date": 49,
+                    "due_date": 143
+                }
+            ]
+        },
+        {
+            "id": 2,
+            "cut_time": 16,
+            "jobs": [
+                {
+                    "big": 1,
+                    "pos_time": 5,
+                    "status": 0,
+                    "blocked": 0,
+                    "cost": 1.0,
+                    "operations": [
+                        {
+                            "type": 0,
+                            "processing_time": 26
+                        }
+                    ],
+                    "release_date": 16,
+                    "due_date": 83
+                }
+            ]
+        }
+    ],
+    "generator": "paired_v2",
+    "cmax_e_heuristic": 110,
+    "arrival_window": [
+        16,
+        36
+    ],
+    "cost_family": "same_costs",
+    "total_jobs": 3,
+    "nb_existing_jobs": 2,
+    "nb_new_jobs": 1
+}

@@ -23,7 +23,7 @@ from ray import ObjectRef
 from models.instance import Instance
 from simulators.gnn_simulator import *
 from utils.common import *
-from conf import INSTANCES_SIZES, CONTROLLED_UB_SCENARIOS, CONTROLLED_UB_TIERS, CONTROLLED_UB_NB_TRAIN, CONTROLLED_UB_NB_TEST
+from conf import INSTANCES_SIZES, CONTROLLED_UB_SCENARIOS, CONTROLLED_UB_TIERS, CONTROLLED_UB_NB_TRAIN, CONTROLLED_UB_NB_TEST, CONTROLLED_PAIRED_SCENARIOS  # NEW : paired
 from models.state import State
 from models.order import OrderInstance
 from utils.common import to_bool
@@ -76,12 +76,19 @@ def reward(env: Environment, device: str) -> Tensor:
     # qu'à départager), alors que la reward donnait le même poids au Cmax et au retard. On retire le terme
     # Cmax et on normalise par la seule borne initiale du retard (plancher à 1 : elle vaut 0 quand aucun
     # retard n'est possible, et diviser par ~0 ferait exploser la reward).
-    # scale: float       = env.init_UB_cmax + env.init_UB_delay + 1e-6  # OLD
-    # delta_cmax: float  = (TRADE_OFF * (env.state.ub_cmax - env.ub_cmax) + env.state.start_time - env.cmax)/(1 + TRADE_OFF)  # OLD
-    scale: float       = max(float(env.init_UB_delay), 1.0)  # NEW
     delta_delay: float = (TRADE_OFF * (env.state.ub_delay - env.ub_delay) + env.state.total_delay - env.delay)/(1 + TRADE_OFF)
-    # return torch.tensor([-REWARD_SCALE * (delta_cmax + delta_delay) / scale], dtype=torch.float32, device=device)  # OLD
+    # NEW : choix de la reward par --reward (variable d'environnement pour que les workers Ray la voient aussi)
+    #   basic   : reward de base, wT + Cmax (l'ancien code OLD)
+    #   no_cmax : reward sans Cmax (defaut, comportement actuel)
+    if reward_mode() == "basic":  # NEW
+        scale: float      = env.init_UB_cmax + env.init_UB_delay + 1e-6  # OLD
+        delta_cmax: float = (TRADE_OFF * (env.state.ub_cmax - env.ub_cmax) + env.state.start_time - env.cmax)/(1 + TRADE_OFF)  # OLD
+        return torch.tensor([-REWARD_SCALE * (delta_cmax + delta_delay) / scale], dtype=torch.float32, device=device)  # OLD
+    scale: float       = max(float(env.init_UB_delay), 1.0)  # NEW
     return torch.tensor([-REWARD_SCALE * delta_delay / scale], dtype=torch.float32, device=device)  # NEW
+
+def reward_mode() -> str:  # NEW
+    return os.environ.get("GNRS_REWARD", "no_cmax")
 
 @ray.remote
 def step_as_task(p_idx: int, q_val: float, agent: Agent, last_env: Environment, action_id: int, device: str, clone: bool=False, train: bool=False, pb_size: int=0) -> Environment:
@@ -229,7 +236,7 @@ def repeated_solve_one(agent: Agent, gantt_path: str, path: str, size: str, id: 
     results.to_csv(f"{path}{size}/{agent.prefix}gnn_solution_{extension}{id}.csv", index=False)
 
 def load_training_instance(path: str, size: str, id: str, dataset: str, scenario: str=None, tier: str=None) -> Instance:
-    if dataset == "controlled_orders_ub":
+    if dataset in ("controlled_orders_ub", "controlled_orders_paired", "controlled_orders_paired_v2"):  # NEW : paired
         order_instance: OrderInstance = OrderInstance.load(f"{path}{size}/{scenario}/instance_{id}_{tier}.json")
         return order_instance.to_combined_instance()
     return Instance.load(path + size + "/instance_" +id+ ".json")
@@ -247,6 +254,8 @@ def solve_one_for_training(agent: Agent, path: str, size: str, id: str, device: 
     # CHANGEMENT (reward sans Cmax) : la courbe de validation suit ce que l'agent optimise, le retard pondéré.
     # obj: int = env.state.total_delay + env.state.cmax  # OLD
     # return obj, (env.init_UB_cmax + env.init_UB_delay)  # OLD
+    if reward_mode() == "basic":  # NEW : la courbe de validation suit la reward choisie
+        return env.state.total_delay + env.state.cmax, (env.init_UB_cmax + env.init_UB_delay)  # OLD
     obj: float = env.state.total_delay  # NEW
     return obj, env.init_UB_delay  # NEW
 
@@ -273,10 +282,11 @@ def train(agent: Agent, path: str, device: str, dataset: str="instances_cost"):
     complexity_limit: int = 1
     size: str             = "s"
     instance_id: str      = "1"
-    is_ub: bool           = (dataset == "controlled_orders_ub")
+    is_ub: bool           = dataset in ("controlled_orders_ub", "controlled_orders_paired", "controlled_orders_paired_v2")  # NEW : paired
+    scenarios: list[str]  = CONTROLLED_PAIRED_SCENARIOS if dataset in ("controlled_orders_paired", "controlled_orders_paired_v2") else CONTROLLED_UB_SCENARIOS  # NEW
     nb_train_ids: int     = CONTROLLED_UB_NB_TRAIN if is_ub else 150
     nb_val_ids: int       = CONTROLLED_UB_NB_TEST if is_ub else 99
-    scenario: str         = CONTROLLED_UB_SCENARIOS[0] if is_ub else None
+    scenario: str         = scenarios[0] if is_ub else None
     tier: str             = CONTROLLED_UB_TIERS[0] if is_ub else None
     sr: int               = SWITCH_RATE
     for episode in range(1, NB_EPISODES+1):
@@ -287,7 +297,7 @@ def train(agent: Agent, path: str, device: str, dataset: str="instances_cost"):
             if is_ub:
                 # sample across the 3 cost scenarios and 3 cut_time tiers so training sees the
                 # full diversity of the controlled_orders_ub instances, not just one slice of it
-                scenario = random.choice(CONTROLLED_UB_SCENARIOS)
+                scenario = random.choice(scenarios)
                 tier     = random.choice(CONTROLLED_UB_TIERS)
         eps_threshold: float = EPS_END + (EPS_START - EPS_END) * math.exp(-1. * episode / EPS_DECAY_RATE)
         greedy = True if episode < (0.8 * NB_EPISODES) else random.random() > 0.7
@@ -299,8 +309,8 @@ def train(agent: Agent, path: str, device: str, dataset: str="instances_cost"):
             # over all 3 cut_time tiers within that scenario so consecutive points of a given scenario's
             # curve are directly comparable (a single tier's difficulty no longer swings the curve
             # point to point -- see the "late" tier near-zero-slack issue diagnosed earlier)
-            nb_scenarios: int  = len(CONTROLLED_UB_SCENARIOS) if is_ub else 1
-            v_scenario: str    = CONTROLLED_UB_SCENARIOS[(episode // VALIDATE_RATE) % nb_scenarios] if is_ub else None
+            nb_scenarios: int  = len(scenarios) if is_ub else 1
+            v_scenario: str    = scenarios[(episode // VALIDATE_RATE) % nb_scenarios] if is_ub else None
             v_tiers: list      = CONTROLLED_UB_TIERS if is_ub else [None]
             for vs in sizes[:complexity_limit]:
                 print(f"Validating size {vs}..." + (f" ({v_scenario})" if is_ub else ""))
@@ -342,12 +352,16 @@ if __name__ == "__main__":
     parser.add_argument("--custom", help="use the custom Q-net instead of a basic one", required=True)
     parser.add_argument("--beam", help="use the gnn-guided beam search", required=False)
     parser.add_argument("--improve", help="improve the solution using local improvement operator", required=False)
-    parser.add_argument("--dataset", help="training dataset: instances_cost (default, flat {a,jobs} format) or controlled_orders_ub (order-acceptance instances, merged into an accept-everything schedule)", required=False, default="instances_cost", choices=["instances_cost", "controlled_orders_ub"])
+    parser.add_argument("--dataset", help="training dataset: instances_cost (default, flat {a,jobs} format) or controlled_orders_ub (order-acceptance instances, merged into an accept-everything schedule)", required=False, default="instances_cost", choices=["instances_cost", "controlled_orders_ub", "controlled_orders_paired", "controlled_orders_paired_v2"])  # NEW : paired
+    parser.add_argument("--reward", help="basic = wT + Cmax, no_cmax = wT seul", required=False, default="no_cmax", choices=["basic", "no_cmax"])  # NEW
     parser.add_argument("--agent_path", help="override the checkpoint directory (defaults to data/training_costs/ for instances_cost, data/training_costs_ub/ for controlled_orders_ub, to avoid overwriting the other agent)", required=False)
     args               = parser.parse_args()
     base_path: str     = args.path
     dataset: str       = args.dataset
-    data_folder: str   = "controlled_orders_ub" if dataset == "controlled_orders_ub" else "instances_cost"
+    # data_folder: str   = "controlled_orders_ub" if dataset == "controlled_orders_ub" else "instances_cost"  # OLD
+    data_folder: str   = dataset if dataset in ("controlled_orders_ub", "controlled_orders_paired", "controlled_orders_paired_v2") else "instances_cost"  # NEW
+    os.environ["GNRS_REWARD"] = args.reward  # NEW : avant ray.init pour que les workers en heritent
+    print(f"Reward : {args.reward}")  # NEW
     instance_type: str = "debug/" if args.mode=="debug" else "train/" if args.mode == "train" else "test/"
     path: str          = base_path + f"/data/{data_folder}/" + instance_type
     gantt_path: str    = base_path + "/data/gantts/"

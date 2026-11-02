@@ -44,6 +44,8 @@ NB_TRAIN: int              = 150
 # scheduling policy by merging all orders' jobs into a single accept-everything instance)
 CONTROLLED_UB_SCENARIOS: list[str] = ["same_costs", "portion_of_3_7", "portion_of_7_3"]
 CONTROLLED_UB_TIERS: list[str]     = ["early", "middle", "late"]
+# NEW : scenarios de data/controlled_orders_paired (instance_generator_paired.py)
+CONTROLLED_PAIRED_SCENARIOS: list[str] = ["same_costs_5_5", "same_costs_3_7", "same_costs_7_3", "diff_costs_5_5", "diff_costs_3_7", "diff_costs_7_3"]
 CONTROLLED_UB_NB_TRAIN: int        = 30
 CONTROLLED_UB_NB_TEST: int         = 20
 
