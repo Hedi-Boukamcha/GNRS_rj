@@ -1,0 +1,430 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{hyperref}
+
+\floatname{algorithm}{Algorithme}
+\renewcommand{\algorithmicrequire}{\textbf{Entrée :}}
+\renewcommand{\algorithmicensure}{\textbf{Sortie :}}
+
+\newcommand{\UB}{\mathrm{UB}}
+\newcommand{\CE}{C_E}
+\newcommand{\charge}{\mathrm{ch}}
+
+\title{Génération des instances de commandes contrôlées appariées\\(version 2 : arrivées ancrées sur le planning des jobs existants)}
+\author{Hedi Boukamcha}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section{Contexte et objectif}
+
+Chaque instance décrit deux commandes. La commande 1 contient les jobs existants $E$, disponibles dès l'instant $0$.
+La commande 2 contient les nouveaux jobs $N$, qui arrivent à l'instant de coupure $t_c$ (\emph{cut time}).
+À cet instant, la méthode d'acceptation choisit le sous-ensemble de $N$ à insérer dans le planning en cours.
+
+Dans la première version du générateur, $t_c$ était placé par rapport à une borne supérieure $\UB(C^E_{\max})$, qui somme les charges des jobs comme s'ils étaient traités un par un.
+Les arrivées des $N$ étaient tirées dans $t_c + \mathcal{U}\{0,\dots,50\}$.
+Deux problèmes en découlaient.
+\begin{itemize}
+  \item La vraie fin des $E$ est souvent bien plus précoce que $\UB(C^E_{\max})$, car les machines et le robot travaillent en parallèle. Dans le tier \emph{late}, environ trois $N$ sur quatre arrivaient après la fin réelle des $E$, dans un atelier déjà vide.
+  \item L'étalement de $50$ unités ne dépend pas de la taille de l'instance. Il est large pour les petites instances et négligeable pour les grandes.
+\end{itemize}
+Les taux d'acceptation mélangeaient donc des insertions réelles et des arrivées après la fin des $E$, ce qui rendait leur analyse incohérente.
+
+La version 2 garantit que \textbf{tous les nouveaux jobs arrivent pendant l'exécution des jobs existants}, et que les tiers \emph{early}, \emph{middle} et \emph{late} ont le même sens quelle que soit la taille.
+Pour cela, l'instant de coupure et les arrivées des $N$ sont exprimés en fraction de la fin réelle estimée des $E$, notée $\CE$.
+Les opérations, les arrivées des $E$, les dates dues et les coûts sont générés exactement comme dans la version 1.
+
+\section{Notation}
+
+\begin{center}
+\begin{tabular}{>{$}l<{$} p{11cm}}
+\toprule
+\text{Symbole} & Signification \\
+\midrule
+E,\ N & Jobs existants (commande 1) et nouveaux jobs (commande 2). \\
+r_j,\ d_j,\ w_j & Date d'arrivée, date due et coût (poids) du job $j$. \\
+p_o & Durée de traitement de l'opération $o$. \\
+M = 3,\ L = 2 & Durée d'un déplacement du robot et durée d'un chargement ou déchargement. \\
+\charge(j) & Charge d'exécution du job $j$ : $\charge(j) = \sum_{o \in j} (2M + p_o) + 2L$. \\
+\UB(C^E_{\max}) & Borne additive de la fin des $E$ (section~\ref{sec:ub}). \\
+\UB(C^{E+N}_{\max}) & Borne additive de la fin des $E$ puis des $N$ (section~\ref{sec:ub}). \\
+\CE & Fin des $E$ estimée par l'heuristique (section~\ref{sec:heur}). \\
+t_c & Instant de coupure, auquel la commande 2 est révélée. \\
+\theta & Position relative dans le planning des $E$, avec $t = \theta\,\CE$. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Vue d'ensemble}
+
+Pour chaque taille d'instance, le générateur produit des instances d'entraînement et de test.
+Chaque instance structurelle $i$ est déclinée selon :
+\begin{itemize}
+  \item trois ratios $E/N$ : $5/5$, $3/7$ et $7/3$ ;
+  \item deux familles de coûts : \texttt{same\_costs} et \texttt{diff\_costs} ;
+  \item trois tiers d'arrivée : \emph{early}, \emph{middle} et \emph{late}.
+\end{itemize}
+Une instance structurelle donne donc $3 \times 2 \times 3 = 18$ fichiers.
+L'algorithme~\ref{alg:global} résume la génération.
+
+\begin{algorithm}[ht]
+\caption{Génération d'une instance structurelle $i$}
+\label{alg:global}
+\begin{algorithmic}[1]
+\State Tirer $n \sim \mathcal{U}\{n_{\min},\dots,n_{\max}\}$ selon la taille, puis l'ensemble commun de $n$ jobs (section~\ref{sec:pool})
+\State Tirer le paramètre $a \sim 10\cdot\mathcal{U}\{0,\dots,10\}$
+\For{chaque ratio $\rho \in \{0.5,\ 0.3,\ 0.7\}$}
+  \State $E \gets$ les $n_E(\rho)$ premiers jobs ; $N \gets$ les autres \Comment{section~\ref{sec:split}}
+  \State Dater les $E$ : arrivées du tirage commun, dates dues par $\UB(C^E_{\max})$ \Comment{section~\ref{sec:due}}
+  \State $\CE \gets$ \Call{FinHeuristique}{$E$} \Comment{section~\ref{sec:heur}}
+  \For{chaque tier $\tau \in \{\textit{early},\ \textit{middle},\ \textit{late}\}$}
+    \State Tirer $t_c$ et la fenêtre d'arrivée $[t_c,\ t_{\mathrm{fin}}]$ \Comment{section~\ref{sec:cut}}
+    \State Placer les arrivées des $N$ dans la fenêtre \Comment{section~\ref{sec:arr}}
+    \State Dater les $N$ par $\UB(C^{E+N}_{\max})$ \Comment{section~\ref{sec:due}}
+  \EndFor
+  \For{chaque famille de coûts}
+    \State Tirer les coûts et écrire les trois fichiers (un par tier) \Comment{section~\ref{sec:costs}}
+  \EndFor
+\EndFor
+\end{algorithmic}
+\end{algorithm}
+
+\section{Étapes détaillées}
+
+\subsection{Ensemble commun de jobs}
+\label{sec:pool}
+
+Le nombre de jobs dépend de la taille :
+\begin{center}
+\begin{tabular}{lcccc}
+\toprule
+Taille & s & m & l & xl \\
+\midrule
+Nombre de jobs $n$ & 3 à 5 & 7 à 10 & 15 à 20 & 30 à 50 \\
+\bottomrule
+\end{tabular}
+\end{center}
+Chaque job reçoit, comme dans la version 1 :
+\begin{itemize}
+  \item un nombre d'opérations dans $\mathcal{U}\{1, 2\}$, de types alternés entre la machine 1 et la machine 2 ;
+  \item une durée $p_o \sim \mathcal{U}\{10,\dots,60\}$ par opération ;
+  \item un indicateur de grande pièce $\mathit{big} \sim \mathcal{U}\{0,1\}$ et un temps de positionnement de $5$ ;
+  \item une arrivée relative $r^{\mathrm{rel}}_j \sim \mathcal{U}\{0,\dots,50\}$, utilisée si le job devient un $E$.
+\end{itemize}
+La version 2 ajoute un tirage $u_j \sim \mathcal{U}(0,1)$ par job.
+Il fixe la position d'arrivée du job s'il devient un $N$.
+Il est commun aux trois ratios et aux trois tiers, ce qui préserve l'appariement.
+
+\subsection{Découpage entre jobs existants et nouveaux}
+\label{sec:split}
+
+Pour un ratio $\rho$, le nombre de jobs existants est
+\[
+  n_E(\rho) = \min\!\Big(n-1,\ \max\big(1,\ \lfloor n\rho + 0.5 \rfloor\big)\Big).
+\]
+Les $n_E$ premiers jobs de l'ensemble commun deviennent les $E$, les autres les $N$.
+Les $E$ du ratio $3/7$ sont donc inclus dans ceux du ratio $5/5$, eux-mêmes inclus dans ceux du ratio $7/3$.
+
+\subsection{Bornes additives}
+\label{sec:ub}
+
+Ces bornes sont reprises de la version 1. Elles ne servent plus qu'aux dates dues.
+Les jobs sont parcourus par arrivée croissante :
+\begin{align*}
+  \UB(C^E_{\max}) &:\quad t \gets 0;\quad \forall j \in E:\ t \gets \max(t, r_j) + \charge(j), \\
+  \UB(C^{E+N}_{\max}) &:\quad t \gets \max\big(t_c, \UB(C^E_{\max})\big);\quad \forall j \in N:\ t \gets \max(t, r_j) + \charge(j).
+\end{align*}
+
+\subsection{Estimation de la fin réelle des jobs existants}
+\label{sec:heur}
+
+$\CE$ est obtenu en ordonnançant les $E$ seuls avec le simulateur utilisé par l'agent, suivi de la recherche locale existante.
+L'heuristique est fixe et déterministe. Les instances ne dépendent donc pas de l'agent évalué ensuite.
+
+\paragraph{Représentation d'un ordre.}
+Un ordre est une suite de numéros de jobs, où la $k$-ième apparition du job $j$ désigne sa $k$-ième opération.
+L'ordre interne de chaque job est ainsi toujours respecté, et les opérations de jobs différents peuvent s'entrelacer.
+
+\paragraph{Évaluation d'un ordre.}
+Le simulateur place chaque opération au plus tôt.
+Il respecte les arrivées, les déplacements du robot, les chargements et déchargements, les stations, la disponibilité des machines et le positionnement de la machine 1.
+La recherche locale teste ensuite, opération par opération, l'activation ou la désactivation du traitement en parallèle de la machine 2 pendant la machine 1.
+Elle conserve tout changement qui ne dégrade pas la somme des temps de séjour plus le Cmax.
+Pendant cette étape, les dates dues sont fixées égales aux arrivées, pour que le résultat ne dépende d'aucune date due.
+
+\begin{algorithm}[ht]
+\caption{\textsc{FinHeuristique}$(E)$}
+\label{alg:heur}
+\begin{algorithmic}[1]
+\Require jobs existants $E$ avec leurs arrivées
+\Ensure estimation $\CE$
+\State $\mathcal{O} \gets$ \{FIFO par arrivée, SPT, LPT\} \Comment{opérations d'un même job consécutives}
+\State Initialiser un générateur aléatoire local avec la graine $1000\,|E| + \sum_{j \in E} r_j$
+\For{$k = 1, \dots, 20$}
+  \State Ajouter à $\mathcal{O}$ une permutation aléatoire de la suite des opérations
+\EndFor
+\State $\CE \gets \min_{\sigma \in \mathcal{O}} C_{\max}\big(\textsc{RechercheLocale}(\textsc{Simuler}(\sigma))\big)$
+\State \Return $\CE$
+\end{algorithmic}
+\end{algorithm}
+
+La graine locale rend $\CE$ reproductible et n'altère pas le tirage du reste de l'instance.
+Le nombre d'ordres possibles croît très vite avec le nombre d'opérations.
+Les $23$ essais couvrent tous les ordres pour les plus petites instances, mais seulement une partie dès la taille m.
+
+\subsection{Instant de coupure et fenêtre d'arrivée}
+\label{sec:cut}
+
+Chaque tier est un intervalle $[\theta_{\mathrm{deb}}, \theta_{\mathrm{fin}}]$ du planning des $E$.
+Deux paramètres encadrent la fenêtre d'arrivée des $N$ :
+\begin{itemize}
+  \item une marge $\mu = 0.85$, la fenêtre se termine au plus tard à $\mu\,\CE$ ;
+  \item une largeur minimale $\lambda = 0.10$, la fenêtre fait au moins $\lambda\,\CE$.
+\end{itemize}
+Pour chaque tier :
+\begin{align*}
+  \theta_{\mathrm{arr}} &= \min(\theta_{\mathrm{fin}},\ \mu), \\
+  \theta_c &\sim \mathcal{U}\Big(\theta_{\mathrm{deb}},\ \min\big(\theta_{\mathrm{deb}} + \tfrac{\theta_{\mathrm{fin}} - \theta_{\mathrm{deb}}}{2},\ \theta_{\mathrm{arr}} - \lambda\big)\Big), \\
+  t_c &= \max\big(1,\ \mathrm{round}(\theta_c\,\CE)\big), \qquad t_{\mathrm{fin}} = \lfloor \theta_{\mathrm{arr}}\,\CE \rfloor.
+\end{align*}
+L'instant de coupure est ainsi tiré dans la première moitié de son tier, ce qui évite une fenêtre d'arrivée quasi nulle.
+Les valeurs obtenues sont :
+\begin{center}
+\begin{tabular}{lcccc}
+\toprule
+Tier & $[\theta_{\mathrm{deb}}, \theta_{\mathrm{fin}}]$ & Intervalle de $\theta_c$ & Fin de la fenêtre $\theta_{\mathrm{arr}}$ & Largeur de la fenêtre \\
+\midrule
+early  & $[0.05,\ 1/3]$ & $[0.05,\ 0.19]$ & $1/3$  & $0.14$ à $0.28$ \\
+middle & $[1/3,\ 2/3]$  & $[0.33,\ 0.50]$ & $2/3$  & $0.17$ à $0.33$ \\
+late   & $[2/3,\ 1]$    & $[0.67,\ 0.75]$ & $0.85$ & $0.10$ à $0.18$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+Toutes les quantités sont en fraction de $\CE$. Ces valeurs peuvent légèrement varier sur les petites instances, à cause de l'arrondi.
+
+\subsection{Arrivées des nouveaux jobs}
+\label{sec:arr}
+
+Chaque nouveau job $j \in N$ arrive à
+\[
+  r_j = t_c + \mathrm{round}\big(u_j\,(t_{\mathrm{fin}} - t_c)\big),
+\]
+avec le tirage $u_j$ de la section~\ref{sec:pool}.
+Par construction, $r_j \le \mu\,\CE < \CE$ : aucun nouveau job n'arrive après la fin estimée des $E$.
+Le générateur vérifie cette propriété pour chaque instance.
+
+La marge $\mu = 0.85$ couvre l'écart entre l'heuristique et l'agent.
+Sur les instances de la version 1, l'agent termine les $E$ au plus tôt à $91\,\%$ de l'heuristique en taille s, et à $87\,\%$ en taille m.
+
+\subsection{Dates dues}
+\label{sec:due}
+
+Les dates dues gardent la structure de la version 1, avec un plafond plus large et sans garde-fou.
+Pour un job d'arrivée $r_j$, on note $\underline{d}_j = \max(b_{\min},\ \max(r_j, 1) + \charge(j))$ la date due la plus précoce admissible, c'est-à-dire la fin du job traité seul.
+La date due est tirée par
+\[
+  d_j \sim \mathcal{U}\Big(\underline{d}_j,\ \max\big(\underline{d}_j,\ b_{\max}\big)\Big),
+\]
+puis arrondie à l'entier. Les bornes dépendent du type de job :
+\begin{center}
+\begin{tabular}{lcc}
+\toprule
+Jobs & $b_{\min}$ & $b_{\max}$ \\
+\midrule
+Existants $E$ & $50$ & $\UB(C^E_{\max})$ \\
+Nouveaux $N$ & $t_c + 50$ & $\UB(C^{E+N}_{\max})$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+La date due d'un job se situe donc entre sa fin s'il était traité seul et la borne sérielle de tout le travail.
+Si $b_{\max} < \underline{d}_j$, la date due vaut $\underline{d}_j$ et la marge est nulle.
+Le facteur multiplicatif de $b_{\max}$ (ici $1$) est réglable par la variable d'environnement \texttt{GNRS\_DUE\_FACTOR}.
+
+\subsection{Coûts}
+\label{sec:costs}
+
+\begin{center}
+\begin{tabular}{lcc}
+\toprule
+Famille & Coût des $E$ & Coût des $N$ \\
+\midrule
+\texttt{same\_costs} & $1$ & $1$ \\
+\texttt{diff\_costs} & $\mathcal{U}(0.8,\ 1.0)$ & $\mathcal{U}(0.05,\ 0.4)$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+Les coûts sont arrondis à quatre décimales.
+Le coût d'un nouveau job est identique dans les trois tiers.
+
+\section{Appariement}
+
+L'appariement permet de comparer les scénarios instance par instance.
+\begin{itemize}
+  \item \texttt{same\_costs} et \texttt{diff\_costs} partagent exactement les mêmes jobs, arrivées, dates dues et instants de coupure. Seuls les coûts diffèrent.
+  \item Les trois ratios partagent le même ensemble de jobs. Seul le découpage entre $E$ et $N$ change, ainsi que tout ce qui en dépend : $\CE$, $t_c$, arrivées des $N$ et dates dues.
+  \item Les trois tiers partagent les mêmes $E$, les mêmes coûts et les mêmes tirages $u_j$. Seuls $t_c$, les arrivées des $N$ et leurs dates dues changent.
+\end{itemize}
+
+\section{Changements par rapport à l'ancien générateur}
+\label{sec:changes}
+
+L'ancien générateur est \texttt{instance\_generator\_paired.py}. Ses instances sont dans \texttt{data/controlled\_orders\_paired}.
+Le nouveau générateur est \texttt{instance\_generator\_paired\_v2.py}. Ses instances sont dans \texttt{data/controlled\_orders\_paired\_v2}.
+L'ancien générateur et ses instances n'ont pas été modifiés.
+
+\subsection{Ce qui change}
+
+\paragraph{1. La référence temporelle.}
+\begin{itemize}
+  \item \emph{Avant :} les tiers étaient définis sur $\UB(C^E_{\max})$, qui additionne les charges des $E$ comme s'ils passaient un par un.
+  \item \emph{Maintenant :} les tiers sont définis sur $\CE$, la fin des $E$ obtenue en les ordonnançant réellement avec le simulateur et la recherche locale (section~\ref{sec:heur}).
+  \item \emph{Pourquoi :} les machines et le robot travaillent en parallèle. La vraie fin des $E$ est donc souvent de $5$ à $35\,\%$ plus précoce que $\UB(C^E_{\max})$ en taille m, et l'écart grandit avec la taille. De plus, $\UB(C^E_{\max})$ n'est pas toujours une vraie borne supérieure, car elle ignore le temps de positionnement de la machine 1. Un instant de coupure placé sur cette borne ne correspondait donc pas à l'avancement réel des $E$.
+\end{itemize}
+
+\paragraph{2. L'instant de coupure.}
+\begin{itemize}
+  \item \emph{Avant :} $t_c$ était tiré uniformément dans tout le tier, soit $[0, \tfrac13]$, $[\tfrac13, \tfrac23]$ ou $[\tfrac23, 1]$ fois $\UB(C^E_{\max})$.
+  \item \emph{Maintenant :} $t_c$ est tiré dans la première moitié du tier, en fraction de $\CE$, en laissant une fenêtre d'arrivée d'au moins $0.10\,\CE$ (section~\ref{sec:cut}). Le tier \emph{early} commence à $0.05\,\CE$.
+  \item \emph{Pourquoi :} un instant de coupure tiré près de la fin du tier laissait une fenêtre d'arrivée presque nulle. La position de $t_c$ devenait alors une source de variabilité non contrôlée.
+\end{itemize}
+
+\paragraph{3. Les arrivées des nouveaux jobs.}
+\begin{itemize}
+  \item \emph{Avant :} $r_j = t_c + \mathcal{U}\{0,\dots,50\}$, quelle que soit la taille de l'instance.
+  \item \emph{Maintenant :} $r_j$ est uniforme entre $t_c$ et $\min(\theta_{\mathrm{fin}}, 0.85)\,\CE$ (section~\ref{sec:arr}). La position relative $u_j$ de chaque job est commune aux ratios et aux tiers.
+  \item \emph{Pourquoi :} avec l'ancien tirage, environ $75\,\%$ des $N$ du tier \emph{late} et $15\,\%$ de ceux du tier \emph{middle} arrivaient après la fin réelle des $E$. Ces jobs trouvaient un atelier vide et étaient presque toujours acceptés. Les taux d'acceptation mélangeaient ainsi de vraies insertions et des arrivées sans concurrence. L'étalement fixe de $50$ unités rendait aussi les tailles incomparables : il était large pour les petites instances et négligeable pour les grandes.
+\end{itemize}
+
+\paragraph{4. Les dates dues.}
+\begin{itemize}
+  \item \emph{Avant :} $d_j \sim \mathcal{U}\big(\underline{d}_j,\ \max(\underline{d}_j + 50,\ \UB/3)\big)$, avec $\UB = \UB(C^E_{\max})$ pour les $E$ et $\UB(C^{E+N}_{\max})$ pour les $N$.
+  \item \emph{Maintenant :} $d_j \sim \mathcal{U}\big(\underline{d}_j,\ \max(\underline{d}_j,\ \UB)\big)$. Le plafond passe de $\UB/3$ à $\UB$, et le garde-fou $\underline{d}_j + 50$ est supprimé.
+  \item \emph{Pourquoi :} le plafond $\UB/3$ tombait le plus souvent sous $\underline{d}_j$. En taille s, c'était le cas de $97\,\%$ des $N$ ; en taille m, de $68$ à $96\,\%$ selon le tier. La date due était alors fixée par le garde-fou, une marge arbitraire entre $0$ et $50$, et non par la formule. Supprimer le garde-fou sans élargir le plafond donnait une marge nulle à $91\,\%$ des $E$ et à $96$ à $99\,\%$ des $N$ \emph{middle} et \emph{late} en taille s. Avec le plafond $\UB$, la formule fixe réellement la date due : la part de marges nulles tombe sous $2\,\%$ partout, sauf pour les $E$ de taille s ($14\,\%$, cas d'un seul job existant, sans concurrence entre $E$).
+\end{itemize}
+
+\paragraph{5. Les métadonnées des instances.}
+Chaque fichier JSON contient trois nouveaux champs : \texttt{generator}, \texttt{cmax\_e\_heuristic} et \texttt{arrival\_window}.
+Le reste du format est identique, et les instances se lisent avec le même code.
+
+\subsection{Ce qui ne change pas}
+
+\begin{itemize}
+  \item Les tailles, le nombre d'instances par taille et la graine par défaut.
+  \item Les opérations des jobs : nombre, types alternés, durées, indicateur de grande pièce et temps de positionnement.
+  \item Les arrivées des $E$, tirées dans $\mathcal{U}\{0,\dots,50\}$.
+  \item Le découpage entre $E$ et $N$ selon le ratio.
+  \item La forme des dates dues : tirage uniforme entre la fin au plus tôt du job et une borne additive, avec $b_{\min} = 50$ pour les $E$ et $t_c + 50$ pour les $N$.
+  \item Les deux familles de coûts et leurs intervalles.
+  \item L'appariement entre familles de coûts, entre ratios et entre tiers.
+\end{itemize}
+
+\subsection{Conséquences pratiques}
+
+\begin{itemize}
+  \item Les agents entraînés sur l'ancien jeu doivent être réentraînés sur le nouveau, avec l'option \texttt{--dataset=controlled\_orders\_paired\_v2} du script d'entraînement.
+  \item Les résultats obtenus sur l'ancien jeu ne sont pas directement comparables à ceux du nouveau. Les instances de même numéro ont les mêmes opérations, mais pas les mêmes instants de coupure, arrivées et dates dues des $N$.
+  \item Le tier \emph{late} représente désormais une vraie insertion tardive pendant la production, et non plus une arrivée majoritairement après la fin des $E$.
+\end{itemize}
+
+\subsection{Récapitulatif}
+
+\begin{center}
+\begin{tabular}{p{3.6cm} p{5.2cm} p{5.2cm}}
+\toprule
+Élément & Version 1 & Version 2 \\
+\midrule
+Référence temporelle & $\UB(C^E_{\max})$, borne additive & $\CE$, fin heuristique des $E$ \\
+Instant de coupure & Uniforme dans tout le tier de $\UB(C^E_{\max})$ & Première moitié du tier de $\CE$ \\
+Largeur de la fenêtre d'arrivée & $50$ unités, fixe & au moins $0.10\,\CE$ \\
+Arrivées des $N$ & $t_c + \mathcal{U}\{0,\dots,50\}$ & Uniformes entre $t_c$ et $\min(\theta_{\mathrm{fin}}, 0.85)\,\CE$ \\
+$N$ arrivés après la fin des $E$ & environ $75\,\%$ en \emph{late}, $15\,\%$ en \emph{middle} & $0\,\%$ par construction \\
+Arrivées des $E$ & $\mathcal{U}\{0,\dots,50\}$ & inchangé \\
+Plafond des dates dues & $\max(\underline{d}_j + 50,\ \UB/3)$ & $\max(\underline{d}_j,\ \UB)$, sans garde-fou \\
+Coûts et appariement & & inchangé \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Jeu de données produit et validation}
+
+Le jeu contient $30$ instances d'entraînement et $20$ de test par taille.
+Avec les $18$ déclinaisons, cela donne $3600$ fichiers, avec la graine $1$.
+\begin{itemize}
+  \item Aucun nouveau job n'arrive après $\CE$, sur l'ensemble des $3600$ fichiers.
+  \item Les paires \texttt{same\_costs} et \texttt{diff\_costs} sont identiques hors coûts.
+  \item Aucune structure de test n'apparaît dans l'entraînement.
+\end{itemize}
+
+Chaque fichier JSON garde le format de la version 1, lisible par le solveur et par l'entraînement.
+Il ajoute trois champs : \texttt{generator} (\texttt{paired\_v2}), \texttt{cmax\_e\_heuristic} pour $\CE$, et \texttt{arrival\_window} pour $[t_c, t_{\mathrm{fin}}]$.
+
+\section{Limites connues}
+\label{sec:limits}
+
+\paragraph{Jobs existants souvent en retard au départ.}
+Même avec le plafond $\UB(C^E_{\max})$, au moins un $E$ est souvent déjà en retard dans le planning heuristique de la section~\ref{sec:heur}, avant l'arrivée des $N$. Nombre d'instances concernées sur $20$ instances de test :
+\begin{center}
+\begin{tabular}{lccc}
+\toprule
+Taille & $3/7$ & $5/5$ & $7/3$ \\
+\midrule
+s  & 6  & 13 & 16 \\
+m  & 14 & 19 & 20 \\
+l  & 19 & 20 & 20 \\
+xl & 20 & 20 & 20 \\
+\bottomrule
+\end{tabular}
+\end{center}
+C'est structurel : avec un tirage uniforme à partir de $\underline{d}_j$, dès que les $E$ sont nombreux, l'un d'eux reçoit presque sûrement une marge faible et devient en retard au moindre conflit.
+Ces valeurs surestiment un peu la réalité, car l'heuristique minimise le $C_{\max}$ et non le retard.
+La règle d'acceptation dépend de ce retard initial.
+S'il est nul, chaque $E$ peut être retardé d'au plus $\varepsilon\,(d_j - r_j)$.
+Sinon, le retard pondéré des $E$ ne doit pas dépasser $(1+\delta)$ fois le retard initial.
+Les comparaisons d'acceptation entre ratios doivent donc être faites à régime d'acceptation égal.
+
+\paragraph{Marges nulles résiduelles.}
+Sans garde-fou, un job reçoit une marge nulle quand $b_{\max} < \underline{d}_j$. Part des jobs concernés dans le jeu produit :
+\begin{center}
+\begin{tabular}{lcccc}
+\toprule
+Taille & $E$ & $N$ early & $N$ middle & $N$ late \\
+\midrule
+s  & 14.1\,\% & 0\,\% & 0\,\%   & 1.9\,\% \\
+m  & 0.7\,\%  & 0\,\% & 0.4\,\% & 0.4\,\% \\
+l  & 0\,\%    & 0\,\% & 0\,\%   & 0\,\% \\
+xl & 0.1\,\%  & 0\,\% & 0\,\%   & 0.1\,\% \\
+\bottomrule
+\end{tabular}
+\end{center}
+Les $14\,\%$ de $E$ en taille s correspondent aux instances à un seul job existant, pour lequel $\UB(C^E_{\max}) = \underline{d}_j$.
+
+\paragraph{Écart entre l'heuristique et l'agent.}
+La marge $\mu = 0.85$ couvre les écarts observés en tailles s et m.
+Elle n'a pas été vérifiée en tailles l et xl, où les $23$ ordres testés ne couvrent qu'une infime partie des ordres possibles.
+Après les tests, la propriété peut être contrôlée en comparant la fin des $E$ dans le planning de l'agent aux arrivées des $N$.
+
+\paragraph{Granularité du taux d'acceptation.}
+En taille s, une instance contient de $1$ à $3$ nouveaux jobs, et le taux d'acceptation varie par paliers.
+Il est préférable de rapporter des moyennes par scénario avec un intervalle de confiance, ou le nombre total de jobs acceptés, plutôt que des minimums et maximums.
+
+\section{Reproduction}
+
+\begin{verbatim}
+python3 instance_generator_paired_v2.py --train=30 --test=20 --path=./
+\end{verbatim}
+Les instances sont écrites dans
+\texttt{data/controlled\_orders\_paired\_v2/<train|test>/<taille>/<scénario>/instance\_<i>\_<tier>.json}.
+L'option \texttt{--sizes} restreint la génération à certaines tailles, et \texttt{--seed} change la graine.
+
+\end{document}

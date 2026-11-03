@@ -14,7 +14,7 @@ from instance_generator import (
     generate_order_template,
     compute_ub_cmax_e,
     compute_ub_cmax_e_n,
-    sample_due_dates_from_ub,
+    estimated_ub_cmax,
     build_instance,
     save_json,
 )
@@ -34,8 +34,8 @@ from instance_generator_paired import E_RATIOS, COST_FAMILIES, scenario_name, nb
 #      fenetre d'arrivee des N ne soit jamais quasi nulle (au moins MIN_WINDOW_FRAC * C_E).
 #   3. Les N arrivent uniformement entre le cut et min(fin du tier, ARRIVAL_MARGIN * C_E) :
 #      tous les N arrivent pendant le planning des E (plus de U(0, 50) fixe).
-#   4. Inchange par rapport a v1 : releases des E dans U(0, 50) et dates dues par UB
-#      (E : U(max(50, r + charge), UB(cmaxE)/3) ; N : U(max(cut + 50, r + charge), UB(cmaxE+N)/3)).
+#   4. Inchange par rapport a v1 : releases des E dans U(0, 50). Dates dues toujours par UB, mais plafond UB
+#      au lieu de UB/3 et sans garde-fou +50 (E : U(d_min, max(d_min, UB(cmaxE))) ; N : idem avec UB(cmaxE+N)).
 #   5. Controle a la generation : chaque N doit arriver avant C_E (assert).
 __author__  = "Hedi Boukamcha"
 __email__   = "hedi.boukamcha.1@ulaval.ca"
@@ -48,10 +48,11 @@ TIERS_V2 = {
     "middle": (1 / 3, 2 / 3),
     "late":   (2 / 3, 1.0),
 }
-ARRIVAL_MARGIN  = 0.9          # les N arrivent au plus tard a ARRIVAL_MARGIN * C_E
+ARRIVAL_MARGIN  = 0.85         # les N arrivent au plus tard a ARRIVAL_MARGIN * C_E (l agent finit les E jusqu a 13 % avant l heuristique)
 MAX_CUT_RETRIES = 50
 MIN_WINDOW_FRAC = 0.1          # fenetre d'arrivee des N d'au moins 10 % de C_E
 HEURISTIC_RESTARTS = 20         # ordres aleatoires testes pour estimer C_E
+DUE_FACTOR = float(os.environ.get("GNRS_DUE_FACTOR", 1.0))  # plafond des dates dues = DUE_FACTOR * UB (v1 : 1/3, avec garde-fou)
 
 # ---------------------------------------------------------------------------------------------
 # Planning heuristique (fixe et deterministe : ne depend pas de l'agent)
@@ -132,6 +133,17 @@ def _clean(job: dict) -> dict:
 # ---------------------------------------------------------------------------------------------
 # Structure d'une instance (tout sauf les couts)
 # ---------------------------------------------------------------------------------------------
+def sample_due_dates_no_guard(jobs: list[dict], min_due_date: float, max_due_date: float, base_time: int) -> list[dict]:
+    """Comme instance_generator.sample_due_dates_from_ub, SANS le garde-fou de +50 :
+    d ~ U(d_min, max(d_min, b_max)). Si b_max < d_min, la date due vaut d_min (marge nulle)."""
+    jobs = copy.deepcopy(jobs)
+    for job in jobs:
+        absolute_release = base_time + job["relative_release"]
+        job_min_due = max(min_due_date, estimated_ub_cmax([job], absolute_release))
+        job_max_due = max(job_min_due, max_due_date)
+        job["relative_due"] = int(round(random.uniform(job_min_due, job_max_due) - base_time))
+    return jobs
+
 def generate_structure_v2(job_pool: list[dict], e_ratio: float, a: int, due_date_min: int = 50) -> dict:
     total_jobs = len(job_pool)
     nb_e = nb_existing(total_jobs, e_ratio)
@@ -143,10 +155,9 @@ def generate_structure_v2(job_pool: list[dict], e_ratio: float, a: int, due_date
     _, c_e = heuristic_completion_times([{**j, "release_date": j["relative_release"]} for j in existing],
                                         restarts=HEURISTIC_RESTARTS)
 
-    # 2. dates dues des E : identiques a v1 (U(max(50, r + charge), UB(cmaxE)/3))
+    # 2. dates dues des E : U(max(50, r + charge), DUE_FACTOR * UB(cmaxE)), sans garde-fou
     ub_e = compute_ub_cmax_e(existing)
-    existing = sample_due_dates_from_ub(jobs=existing, min_due_date=due_date_min, max_due_date=ub_e / 3,
-                                        base_time=0, min_slack=due_date_min)
+    existing = sample_due_dates_no_guard(jobs=existing, min_due_date=due_date_min, max_due_date=DUE_FACTOR * ub_e, base_time=0)
 
     tiers = {}
     for tier_name, (lo, hi) in TIERS_V2.items():
@@ -169,10 +180,10 @@ def generate_structure_v2(job_pool: list[dict], e_ratio: float, a: int, due_date
             new_jobs.append(j)
         assert all(cut_time + j["relative_release"] < c_e for j in new_jobs), "un N arrive apres la fin des E"
 
-        # 4. dates dues des N : identiques a v1 (U(max(cut + 50, r + charge), UB(cmaxE+N)/3))
+        # 4. dates dues des N : U(max(cut + 50, r + charge), DUE_FACTOR * UB(cmaxE+N)), sans garde-fou
         ub_en = compute_ub_cmax_e_n(new_jobs, cut_time=cut_time, ub_cmax_e=ub_e)
-        new_jobs = sample_due_dates_from_ub(jobs=new_jobs, min_due_date=cut_time + due_date_min,
-                                            max_due_date=ub_en / 3, base_time=cut_time, min_slack=due_date_min)
+        new_jobs = sample_due_dates_no_guard(jobs=new_jobs, min_due_date=cut_time + due_date_min,
+                                             max_due_date=DUE_FACTOR * ub_en, base_time=cut_time)
         tiers[tier_name] = {"cut_time": cut_time, "arrival_end": arrival_end, "ub_cmax_e_n": ub_en, "new_jobs": new_jobs}
 
     return {"total_jobs": total_jobs, "nb_e": nb_e, "nb_n": nb_n, "existing_jobs": existing,
