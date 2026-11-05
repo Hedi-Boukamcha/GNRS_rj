@@ -40,7 +40,7 @@ def run_one_controlled_instance(
     improve: bool = True,
     beam_width: int = BEAM_WIDTH,
     analysis_root: str = ANALYSIS_ROOT,  # NEW : dossier des analyses (avant : toujours ANALYSIS_ROOT)
-    epsilon_window: float = 0.2  # NEW : tolérance sur la fenêtre promise quand le retard initial est nul
+    epsilon_window: float = 0.0  # NEW (OLD: 0.2) : tolérance sur la fenêtre promise quand le retard initial est nul
 ):
     variant = os.path.splitext(os.path.basename(input_path))[0]
     delta_name = f"delta_{str(delta_ratio).replace('.', '_')}"
@@ -257,7 +257,7 @@ def run_all_controlled_instances(
     improve: bool = True,
     beam_width: int = BEAM_WIDTH,
     analysis_root: str = ANALYSIS_ROOT,  # NEW
-    epsilon_window: float = 0.2  # NEW
+    epsilon_window: float = 0.0  # NEW (OLD: 0.2)
 ):
     """
     Lance la méthode d'acceptation sur toutes les instances contenues dans root_dir.
@@ -568,7 +568,7 @@ if __name__ == "__main__":
     parser.add_argument("--beam", type=str, choices=["true", "false"], default="true", help="Utiliser le beam search guidé par le GNN")
     parser.add_argument("--improve", type=str, choices=["true", "false"], default="true", help="Appliquer la recherche locale au cut sur les solutions terminées")
     parser.add_argument("--beam_width", type=int, default=BEAM_WIDTH, help="Largeur du beam")
-    parser.add_argument("--epsilon", type=float, default=0.2, help="Retard initial nul : chaque job existant peut finir en retard d'au plus epsilon * (d_j - r_j)")  # NEW
+    parser.add_argument("--epsilon", type=float, default=0.0, help="Retard initial nul : chaque job existant peut finir en retard d'au plus epsilon * (d_j - r_j)")  # NEW (OLD: default=0.2)
     parser.add_argument("--analysis_root", type=str, default=ANALYSIS_ROOT, help="Dossier racine des analyses (summary.csv, tableaux d'acceptation)")  # NEW
     parser.add_argument("--num_cpus", type=int, default=8, help="Nombre de CPU pour Ray (expansion du beam)")
     args = parser.parse_args()

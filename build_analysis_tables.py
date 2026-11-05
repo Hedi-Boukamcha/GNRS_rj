@@ -1,4 +1,5 @@
 # build_size_tables.py
+import argparse
 import pandas as pd
 import re
 import os
@@ -20,6 +21,7 @@ REPO_ROOT     = Path(__file__).resolve().parent
 # Chaque dossier reçoit ses propres tables dans <dossier>/results_by_size/csv/.
 UB_ROOT       = REPO_ROOT / "data" / "controlled_orders_ub" / "test"
 PAIRED_ROOT   = REPO_ROOT / "data" / "controlled_orders_paired" / "test"  # NEW : instance_generator_paired.py
+PAIRED_V2_ROOT = REPO_ROOT / "data" / "controlled_orders_paired_v2" / "test"  # NEW : instance_generator_paired_v2.py
 # NEW : chaque dossier d'analyse est associé au dossier d'instances où lire les coûts des jobs
 # existants (delta_tjE). Avant, tout était lu dans UB_ROOT, ce qui donnait des coûts faux (ou absents)
 # pour les instances appariées same/diff.
@@ -31,6 +33,7 @@ ANALYSIS_ROOTS = [
     (REPO_ROOT / "analysis_paired_complete_agent_no_cmax", PAIRED_ROOT),
     (REPO_ROOT / "analysis_paired_no_beam" / "basic_reward", PAIRED_ROOT),
     (REPO_ROOT / "analysis_paired_no_beam" / "no_cmax", PAIRED_ROOT),
+    (REPO_ROOT / "analysis_paired_v2_basic", PAIRED_V2_ROOT),  # NEW : agent training_paired_basic sur les instances v2
 ]
 # NEW : tests d'epsilon sur les instances appariées (run_epsilon_paired.py), un dossier par reward et par epsilon
 ANALYSIS_ROOTS += [(d, PAIRED_ROOT) for d in sorted((REPO_ROOT / "analysis_paired_epsilon").glob("*/eps_*")) if d.is_dir()]
@@ -151,8 +154,16 @@ def write_tables_per_size_and_scenario(master: pd.DataFrame, csv_dir: Path) -> N
         print(f"[INFO] {out_csv} -> {len(df_group)} rows")
 
 # RUN: python3 build_analysis_tables.py
+# RUN (un seul dossier) : python3 build_analysis_tables.py --only analysis_paired_v2_basic
 if __name__ == "__main__":
-    for analysis_root, data_root in ANALYSIS_ROOTS:
+    parser = argparse.ArgumentParser()  # NEW
+    parser.add_argument("--only", nargs="+", default=None, help="Ne traiter que ces dossiers d'analyse (chemins relatifs au repo)")  # NEW
+    args = parser.parse_args()  # NEW
+    # for analysis_root, data_root in ANALYSIS_ROOTS:  # OLD
+    selected_roots = [r for r in ANALYSIS_ROOTS if args.only is None or str(r[0].relative_to(REPO_ROOT)) in args.only]  # NEW
+    if not selected_roots:  # NEW
+        raise ValueError(f"Aucun dossier ne correspond à --only {args.only}")  # NEW
+    for analysis_root, data_root in selected_roots:  # NEW
         print(f"\n[INFO] ===== {analysis_root.relative_to(REPO_ROOT)} (instances : {data_root.relative_to(REPO_ROOT)}) =====")
         if not analysis_root.exists():
             print(f"[WARN] dossier absent, ignoré : {analysis_root}")

@@ -353,7 +353,7 @@ def evaluate_subset(base_cut_state: State,
                     all_weights: dict, 
                     gantt_dir: str | None = None,
                     rollout_fn=None,
-                    epsilon_window: float = 0.2) -> tuple[float, float, float, int, bool]:  # NEW : epsilon_window + window_ok retourné
+                    epsilon_window: float = 0.0) -> tuple[float, float, float, int, bool]:  # NEW (OLD: epsilon_window = 0.2) : epsilon_window + window_ok retourné
     if rollout_fn is None:
         rollout_fn = lambda st, t: _greedy_rollout(st, t, agent, device)
     
@@ -439,7 +439,7 @@ def evaluate_subset(base_cut_state: State,
 
 # Forward et backward tournent ensemble, niveau par niveau, en partageant les
 # sous-ensembles elagues trouves par l'un ou l'autre sens de recherche.
-def bfs_bidirectional(state: State, new_jobs: list[Job], cut_time: int, agent: Agent, device: str, all_weights: dict, delta_ratio: float = 0.2, gantt_dir: str | None = None, rollout_fn=None, epsilon_window: float = 0.2) -> list[Job]:  # NEW : epsilon_window
+def bfs_bidirectional(state: State, new_jobs: list[Job], cut_time: int, agent: Agent, device: str, all_weights: dict, delta_ratio: float = 0.2, gantt_dir: str | None = None, rollout_fn=None, epsilon_window: float = 0.0) -> list[Job]:  # NEW (OLD: epsilon_window = 0.2)
     nb_existing = len(state.job_states)
     start_time = time.perf_counter()
 
@@ -751,7 +751,7 @@ def save_acceptation_analysis_csv(
                 # ""               # ((Tj_final)-(Tj_initial))/(Tj_initial) : pas applicable  # OLD
             ])
    
-def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str, delta_ratio: float = 0.2, gantt_dir: str | None = None, save_step_gantts: bool = False, analysis_dir: str | None = None, use_beam: bool = True, improve: bool = True, beam_width: int = BEAM_WIDTH, epsilon_window: float = 0.2) -> State:  # NEW : epsilon_window
+def acceptation_method(order_instance: OrderInstance, agent: Agent, device: str, delta_ratio: float = 0.2, gantt_dir: str | None = None, save_step_gantts: bool = False, analysis_dir: str | None = None, use_beam: bool = True, improve: bool = True, beam_width: int = BEAM_WIDTH, epsilon_window: float = 0.0) -> State:  # NEW (OLD: epsilon_window = 0.2)
     """
     Pipeline complet : schedule Order 1 puis applique le Master Problem pour chaque order suivant.
     Version complete agent : toutes les cédulations passent par _complete_rollout (beam + recherche locale).
