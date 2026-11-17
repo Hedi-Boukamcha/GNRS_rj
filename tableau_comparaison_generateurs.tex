@@ -1,0 +1,69 @@
+% Tableau comparatif des générateurs d'instances appariées v1 et v2,
+% lignes dans l'ordre de génération (boucle de instance_generator_paired_v2.py).
+% Packages : booktabs, array, amsmath.
+% Macros (déjà définies dans generation_instances_paired_v2.tex) :
+%   \newcommand{\UB}{\mathrm{UB}}
+%   \newcommand{\CE}{C_E}
+%   \newcommand{\charge}{\mathrm{ch}}
+% Notation : \charge(j) = \sum_{o \in j} (2M + p_o) + 2L, avec M = 3 et L = 2.
+\begin{table}[htbp]
+\centering
+\small
+\caption{Comparaison des générateurs d'instances appariées, version 1 (\texttt{controlled\_orders\_paired}) et version 2 (\texttt{controlled\_orders\_paired\_v2}), dans l'ordre de génération des attributs.}
+\label{tab:comparaison_generateurs}
+\begin{tabular}{>{\raggedright\arraybackslash}p{3.4cm} >{\raggedright\arraybackslash}p{5.6cm} >{\raggedright\arraybackslash}p{5.6cm}}
+\toprule
+Attribut & Version 1 & Version 2 \\
+\midrule
+\multicolumn{3}{l}{\textit{1. Instance (une fois par numéro d'instance)}} \\
+Nombre de jobs $n$ & s : 3--5, m : 7--10, l : 15--20, xl : 30--50 & inchangé \\
+\midrule
+\multicolumn{3}{l}{\textit{2. Pool de jobs (commun aux 3 ratios et aux 2 familles de coûts)}} \\
+Opérations par job & 1 ou 2, types alternés & inchangé \\
+Durée $p_o$ & $\mathcal{U}\{10,\dots,60\}$ & inchangé \\
+Arrivée relative & $\mathcal{U}\{0,\dots,50\}$ & inchangé, utilisée seulement pour les $E$ \\
+\texttt{big} & $\mathcal{U}\{0,1\}$ & inchangé \\
+\texttt{pos\_time} & 5 & inchangé \\
+Position d'arrivée $u_j$ & -- & $\mathcal{U}(0,1)$, utilisée si le job devient un $N$ \\
+\midrule
+\multicolumn{3}{l}{\textit{3. Paramètre d'instance}} \\
+$a$ & $10 \times \mathcal{U}\{0,\dots,10\}$ & inchangé \\
+\midrule
+\multicolumn{3}{l}{\textit{4. Découpage E/N (pour chaque ratio $\rho \in \{0.3, 0.5, 0.7\}$)}} \\
+Nombre de $E$ & $\max\!\big(1, \min(n-1, \lfloor n\,\rho + 0.5 \rfloor)\big)$, les premiers jobs du pool & inchangé \\
+$r_j$ des $E$ & arrivée relative du pool & inchangé \\
+\midrule
+\multicolumn{3}{l}{\textit{5. Références temporelles des $E$}} \\
+$\CE$ & -- & meilleur Cmax heuristique des $E$ seuls (FIFO, SPT, LPT et 20 ordres aléatoires) \\
+$\UB(C^E_{\max})$ & $E$ triés par $r_j$, $t \leftarrow \max(t, r_j) + \charge(j)$ & inchangé \\
+\midrule
+\multicolumn{3}{l}{\textit{6. Dates dues des $E$} ($d_j \sim \mathcal{U}(\underline{d}_j, \overline{d}_j)$)} \\
+$\underline{d}_j$ des $E$ & $\max\!\big(50,\ r_j + \charge(j)\big)$ & inchangé \\
+$\overline{d}_j$ des $E$ & $\max\!\big(\underline{d}_j + 50,\ \UB(C^E_{\max})/3\big)$ & $\max\!\big(\underline{d}_j,\ \UB(C^E_{\max})\big)$ \\
+\midrule
+\multicolumn{3}{l}{\textit{7. Instant de coupure $t_c$ (pour chaque tier)}} \\
+Référence & $\UB(C^E_{\max})$, tout le tier & $\CE$, première moitié du tier \\
+Early & $\mathcal{U}\{1,\dots,\lfloor \UB/3 \rfloor\}$ & $\mathcal{U}(0.05,\ 0.19) \times \CE$ \\
+Middle & $\mathcal{U}\{\lfloor \UB/3 \rfloor,\dots,\lfloor 2\UB/3 \rfloor\}$ & $\mathcal{U}(1/3,\ 0.50) \times \CE$ \\
+Late & $\mathcal{U}\{\lfloor 2\UB/3 \rfloor,\dots,\UB\}$ & $\mathcal{U}(2/3,\ 0.75) \times \CE$ \\
+\midrule
+\multicolumn{3}{l}{\textit{8. Arrivées des $N$ (pour chaque tier)}} \\
+Fin de fenêtre $t_{\mathrm{fin}}$ & $t_c + 50$ au plus & $\lfloor \min(\theta_{\mathrm{fin}}, 0.85)\,\CE \rfloor$, $\theta_{\mathrm{fin}} \in \{1/3, 2/3, 1\}$ \\
+$r_j$ des $N$ & $t_c$ + arrivée relative du pool & $t_c + \operatorname{round}\!\big(u_j\,(t_{\mathrm{fin}} - t_c)\big)$ \\
+$N$ arrivés après la fin des $E$ & environ 75\,\% en late, 15\,\% en middle & 0\,\% par construction \\
+\midrule
+\multicolumn{3}{l}{\textit{9. Dates dues des $N$ (pour chaque tier)}} \\
+$\UB(C^{E+N}_{\max})$ & même calcul sur les $N$, à partir de $\max(t_c, \UB(C^E_{\max}))$ & inchangé \\
+$\underline{d}_j$ des $N$ & $\max\!\big(t_c + 50,\ r_j + \charge(j)\big)$ & inchangé \\
+$\overline{d}_j$ des $N$ & $\max\!\big(\underline{d}_j + 50,\ \UB(C^{E+N}_{\max})/3\big)$ & $\max\!\big(\underline{d}_j,\ \UB(C^{E+N}_{\max})\big)$ \\
+\midrule
+\multicolumn{3}{l}{\textit{10. Coûts (pour chaque famille, mêmes coûts des $N$ dans les 3 tiers)}} \\
+\texttt{same\_costs} & $w_j = 1$ pour tous les jobs & inchangé \\
+\texttt{diff\_costs} & $E$ : $\mathcal{U}(0.8,\ 1)$ ; $N$ : $\mathcal{U}(0.05,\ 0.4)$ & inchangé \\
+\midrule
+\multicolumn{3}{l}{\textit{11. Sauvegarde}} \\
+Champs JSON ajoutés & -- & \texttt{generator}, \texttt{cmax\_e\_heuristic}, \texttt{arrival\_window} \\
+Taille du jeu & 30 train et 20 test par taille, soit 3600 fichiers & inchangé \\
+\bottomrule
+\end{tabular}
+\end{table}

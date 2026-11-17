@@ -32,6 +32,16 @@ METHODS = {
     "paired_no_beam_no_cmax":        ("analysis_paired_no_beam/no_cmax",        r"Complete agent without beam (reward $wT$ only)"),
 }
 
+# NEW : runs beta / critère E (acceptation_solver_complete_agent.py --betas ... --criteria total indiv) :
+# un "méthode" par dossier <analysis_root>_beta_x/<total|indiv>, ex. paired_v3_basic_beta_0_1_total.
+_CRITERION_LABEL = {"total": "total E criterion", "indiv": "individual E criterion"}  # NEW
+for _d in sorted(REPO_ROOT.glob("analysis_*_beta_*/*")):  # NEW
+    if _d.is_dir() and _d.name in _CRITERION_LABEL:
+        _base, _beta = _d.parent.name.removeprefix("analysis_").rsplit("_beta_", 1)
+        METHODS[f"{_base}_beta_{_beta}_{_d.name}"] = (
+            str(_d.relative_to(REPO_ROOT)),
+            rf"Complete agent ({_base.replace('_', ' ')}), $\beta={_beta.replace('_', '.')}$, {_CRITERION_LABEL[_d.name]}")
+
 TABLE_FONT_SIZE = r"\large"
 
 SIZE_LABEL = {"s": "Small", "m": "Medium", "l": "Large", "xl": "X-Large"}
@@ -72,6 +82,21 @@ STATS = [
 ]
 
 
+def stat_label(col: str, sname: str, stat: str) -> str:  # NEW
+    return r"Avg (\%)" if col == "delta_tjE" and sname == "mean" else stat
+
+
+def delta_tjE_percent(cell_df: pd.DataFrame) -> str:  # NEW
+    """Changement total du retard pondéré des existants, en % du retard pondéré initial total.
+    Somme sur les instances (et non moyenne de pourcentages) : le retard initial vaut souvent 0,
+    ce qui rend un pourcentage par instance indéfini."""
+    initial = pd.to_numeric(cell_df["wT_E_initial"], errors="coerce").sum()
+    change  = pd.to_numeric(cell_df["delta_tjE"], errors="coerce").sum()
+    if initial <= 1e-9:
+        return "--" if abs(change) > 1e-9 else "0.0"
+    return f"{100 * change / initial:.1f}"
+
+
 def load_size_df(csv_dir: Path, size: str) -> pd.DataFrame:
     frames = []
     for csv_file in sorted(csv_dir.glob(f"results_{size}_*.csv")):
@@ -97,7 +122,8 @@ def build_latex(df: pd.DataFrame, size: str, method_name: str, method_title: str
         rf"\multicolumn{{{n_stats}}}{{c}}{{{label}}}" for _ in deltas for _, label, _ in METRICS)
     cmidrules_metric = " ".join(
         rf"\cmidrule(lr){{{3 + k * n_stats}-{2 + (k + 1) * n_stats}}}" for k in range(len(deltas) * len(METRICS)))
-    header_stats = " & ".join(stat for _ in deltas for _ in METRICS for _, stat, _ in STATS)
+    # header_stats = " & ".join(stat for _ in deltas for _ in METRICS for _, stat, _ in STATS)  # OLD
+    header_stats = " & ".join(stat_label(col, sname, stat) for _ in deltas for col, _, _ in METRICS for sname, stat, _ in STATS)  # NEW
 
     rows = []
     for scenario in scenarios:
@@ -108,8 +134,15 @@ def build_latex(df: pd.DataFrame, size: str, method_name: str, method_title: str
             for delta in deltas:
                 cell_df = tier_df[tier_df["delta_ratio"] == delta]
                 for col, _, fmt in METRICS:
-                    for _, _, agg in STATS:
-                        cells.append("--" if cell_df.empty else fmt(agg(cell_df[col])))
+                    # for _, _, agg in STATS:  # OLD
+                    #     cells.append("--" if cell_df.empty else fmt(agg(cell_df[col])))  # OLD
+                    for sname, _, agg in STATS:  # NEW
+                        if cell_df.empty:  # NEW
+                            cells.append("--")  # NEW
+                        elif col == "delta_tjE" and sname == "mean" and "wT_E_initial" in cell_df:  # NEW : Avg en %
+                            cells.append(delta_tjE_percent(cell_df))  # NEW
+                        else:  # NEW
+                            cells.append(fmt(agg(cell_df[col])))  # NEW
             rows.append(" & ".join(cells) + r" \\")
         rows.append(r"\midrule")
     if rows and rows[-1] == r"\midrule":
@@ -121,6 +154,12 @@ def build_latex(df: pd.DataFrame, size: str, method_name: str, method_title: str
         rf"minimum, average and maximum per scenario and cut-time tier, "
         rf"by acceptance-tolerance level $\Delta$."
     )
+    if "wT_E_initial" in df:  # NEW : explication de la colonne Avg (\%) de $\Delta wT_j^E$
+        caption += (
+            r" For $\Delta wT_j^E$, Min and Max are absolute changes and Avg (\%) is the total change "
+            r"relative to the total initial weighted tardiness of existing jobs, "
+            r"$100 \sum \Delta wT_j^E / \sum wT_j^{E,\mathrm{init}}$ (0.0 when both are zero, -- when only the initial tardiness is zero)."
+        )
     label = f"tab:results_summary_{method_name}_{size}"
 
     lines = [

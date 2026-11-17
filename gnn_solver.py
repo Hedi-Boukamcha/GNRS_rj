@@ -236,7 +236,7 @@ def repeated_solve_one(agent: Agent, gantt_path: str, path: str, size: str, id: 
     results.to_csv(f"{path}{size}/{agent.prefix}gnn_solution_{extension}{id}.csv", index=False)
 
 def load_training_instance(path: str, size: str, id: str, dataset: str, scenario: str=None, tier: str=None) -> Instance:
-    if dataset in ("controlled_orders_ub", "controlled_orders_paired", "controlled_orders_paired_v2"):  # NEW : paired
+    if dataset in ("controlled_orders_ub", "controlled_orders_paired", "controlled_orders_paired_v2", "controlled_orders_paired_v3"):  # NEW : paired
         order_instance: OrderInstance = OrderInstance.load(f"{path}{size}/{scenario}/instance_{id}_{tier}.json")
         return order_instance.to_combined_instance()
     return Instance.load(path + size + "/instance_" +id+ ".json")
@@ -282,8 +282,8 @@ def train(agent: Agent, path: str, device: str, dataset: str="instances_cost"):
     complexity_limit: int = 1
     size: str             = "s"
     instance_id: str      = "1"
-    is_ub: bool           = dataset in ("controlled_orders_ub", "controlled_orders_paired", "controlled_orders_paired_v2")  # NEW : paired
-    scenarios: list[str]  = CONTROLLED_PAIRED_SCENARIOS if dataset in ("controlled_orders_paired", "controlled_orders_paired_v2") else CONTROLLED_UB_SCENARIOS  # NEW
+    is_ub: bool           = dataset in ("controlled_orders_ub", "controlled_orders_paired", "controlled_orders_paired_v2", "controlled_orders_paired_v3")  # NEW : paired
+    scenarios: list[str]  = CONTROLLED_PAIRED_SCENARIOS if dataset in ("controlled_orders_paired", "controlled_orders_paired_v2", "controlled_orders_paired_v3") else CONTROLLED_UB_SCENARIOS  # NEW
     nb_train_ids: int     = CONTROLLED_UB_NB_TRAIN if is_ub else 150
     nb_val_ids: int       = CONTROLLED_UB_NB_TEST if is_ub else 99
     scenario: str         = scenarios[0] if is_ub else None
@@ -352,14 +352,14 @@ if __name__ == "__main__":
     parser.add_argument("--custom", help="use the custom Q-net instead of a basic one", required=True)
     parser.add_argument("--beam", help="use the gnn-guided beam search", required=False)
     parser.add_argument("--improve", help="improve the solution using local improvement operator", required=False)
-    parser.add_argument("--dataset", help="training dataset: instances_cost (default, flat {a,jobs} format) or controlled_orders_ub (order-acceptance instances, merged into an accept-everything schedule)", required=False, default="instances_cost", choices=["instances_cost", "controlled_orders_ub", "controlled_orders_paired", "controlled_orders_paired_v2"])  # NEW : paired
+    parser.add_argument("--dataset", help="training dataset: instances_cost (default, flat {a,jobs} format) or controlled_orders_ub (order-acceptance instances, merged into an accept-everything schedule)", required=False, default="instances_cost", choices=["instances_cost", "controlled_orders_ub", "controlled_orders_paired", "controlled_orders_paired_v2", "controlled_orders_paired_v3"])  # NEW : paired (+ v3)
     parser.add_argument("--reward", help="basic = wT + Cmax, no_cmax = wT seul", required=False, default="no_cmax", choices=["basic", "no_cmax"])  # NEW
     parser.add_argument("--agent_path", help="override the checkpoint directory (defaults to data/training_costs/ for instances_cost, data/training_costs_ub/ for controlled_orders_ub, to avoid overwriting the other agent)", required=False)
     args               = parser.parse_args()
     base_path: str     = args.path
     dataset: str       = args.dataset
     # data_folder: str   = "controlled_orders_ub" if dataset == "controlled_orders_ub" else "instances_cost"  # OLD
-    data_folder: str   = dataset if dataset in ("controlled_orders_ub", "controlled_orders_paired", "controlled_orders_paired_v2") else "instances_cost"  # NEW
+    data_folder: str   = dataset if dataset in ("controlled_orders_ub", "controlled_orders_paired", "controlled_orders_paired_v2", "controlled_orders_paired_v3") else "instances_cost"  # NEW
     os.environ["GNRS_REWARD"] = args.reward  # NEW : avant ray.init pour que les workers en heritent
     print(f"Reward : {args.reward}")  # NEW
     instance_type: str = "debug/" if args.mode=="debug" else "train/" if args.mode == "train" else "test/"

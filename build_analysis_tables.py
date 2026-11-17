@@ -22,6 +22,7 @@ REPO_ROOT     = Path(__file__).resolve().parent
 UB_ROOT       = REPO_ROOT / "data" / "controlled_orders_ub" / "test"
 PAIRED_ROOT   = REPO_ROOT / "data" / "controlled_orders_paired" / "test"  # NEW : instance_generator_paired.py
 PAIRED_V2_ROOT = REPO_ROOT / "data" / "controlled_orders_paired_v2" / "test"  # NEW : instance_generator_paired_v2.py
+PAIRED_V3_ROOT = REPO_ROOT / "data" / "controlled_orders_paired_v3" / "test"  # NEW : instance_generator_paired_v3.py
 # NEW : chaque dossier d'analyse est associé au dossier d'instances où lire les coûts des jobs
 # existants (delta_tjE). Avant, tout était lu dans UB_ROOT, ce qui donnait des coûts faux (ou absents)
 # pour les instances appariées same/diff.
@@ -37,6 +38,20 @@ ANALYSIS_ROOTS = [
 ]
 # NEW : tests d'epsilon sur les instances appariées (run_epsilon_paired.py), un dossier par reward et par epsilon
 ANALYSIS_ROOTS += [(d, PAIRED_ROOT) for d in sorted((REPO_ROOT / "analysis_paired_epsilon").glob("*/eps_*")) if d.is_dir()]
+
+# NEW : runs avec le critère N (beta) et le critère E (total | indiv) d'acceptation_solver_complete_agent.py :
+# <analysis_root>_beta_x/<total|indiv>/<size>/delta_x/... ; chaque sous-dossier total/ et indiv/ est traité
+# comme un dossier d'analyse à part. Instances lues selon le nom : paired_v3 -> v3, paired_v2 -> v2, sinon v1.
+def _data_root_for(name: str) -> Path:  # NEW
+    if "paired_v3" in name:
+        return PAIRED_V3_ROOT
+    if "paired_v2" in name:
+        return PAIRED_V2_ROOT
+    return PAIRED_ROOT
+
+ANALYSIS_ROOTS += [(d, _data_root_for(d.parent.name))  # NEW
+                   for d in sorted(REPO_ROOT.glob("analysis_*_beta_*/*"))
+                   if d.is_dir() and d.name in ("total", "indiv")]
 
 CUT_TIME_ORDER = ["early", "middle", "late"]
 INSTANCE_DIR_RE = re.compile(r"^instance_(\d+)_(early|middle|late)$")
@@ -113,6 +128,20 @@ def weighted_sum_delta_tjE(order2_csv: Path, job_costs: dict[str, float]) -> flo
     return weighted.sum() if not weighted.isna().all() else None
 
 
+def weighted_sum_initial_tjE(order2_csv: Path, job_costs: dict[str, float]) -> float | None:  # NEW
+    """Retard pondéré initial des existants : sum(cost_j * Tj_initial) (sert au pourcentage de delta_tjE)."""
+    if not order2_csv.exists() or not job_costs:
+        return None
+    df = read_order2_csv(order2_csv)
+    existing = df.loc[df["Pool"] == "Existants", ["job", "Tj_initial"]].copy()
+    existing["Tj_initial"] = pd.to_numeric(existing["Tj_initial"], errors="coerce")
+    existing = existing.dropna(subset=["Tj_initial"])
+    if existing.empty:
+        return None
+    weighted = existing["Tj_initial"] * existing["job"].map(job_costs)
+    return weighted.sum() if not weighted.isna().all() else None
+
+
 def build_master_table(analysis_root: Path, data_root: Path = UB_ROOT) -> pd.DataFrame:
     rows = []
     for summary_csv in analysis_root.glob("*/delta_*/*/instance_*/summary.csv"):
@@ -130,6 +159,7 @@ def build_master_table(analysis_root: Path, data_root: Path = UB_ROOT) -> pd.Dat
         order2_csv = summary_csv.parent / "order_2_acceptance_analysis.csv"
         job_costs = existing_job_costs(parsed["size"], parsed["cost_variant"], parsed["instance"], parsed["cut_time_pos"], data_root)
         row["delta_tjE"] = weighted_sum_delta_tjE(order2_csv, job_costs)
+        row["wT_E_initial"] = weighted_sum_initial_tjE(order2_csv, job_costs)  # NEW : base du pourcentage dans les tables LaTeX
 
         rows.append(row)
 
@@ -155,6 +185,7 @@ def write_tables_per_size_and_scenario(master: pd.DataFrame, csv_dir: Path) -> N
 
 # RUN: python3 build_analysis_tables.py
 # RUN (un seul dossier) : python3 build_analysis_tables.py --only analysis_paired_v2_basic
+# RUN (critères E, v3)   : python3 build_analysis_tables.py --only analysis_paired_v3_basic_beta_0_1/total analysis_paired_v3_basic_beta_0_1/indiv
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()  # NEW
     parser.add_argument("--only", nargs="+", default=None, help="Ne traiter que ces dossiers d'analyse (chemins relatifs au repo)")  # NEW

@@ -40,13 +40,16 @@ def run_one_controlled_instance(
     improve: bool = True,
     beam_width: int = BEAM_WIDTH,
     analysis_root: str = ANALYSIS_ROOT,  # NEW : dossier des analyses (avant : toujours ANALYSIS_ROOT)
-    epsilon_window: float = 0.0  # NEW (OLD: 0.2) : tolérance sur la fenêtre promise quand le retard initial est nul
+    # epsilon_window: float = 0.0  # OLD : tolérance sur la fenêtre promise quand le retard initial est nul
+    beta_ratio: float = 0.1,  # NEW : 2e critère, chaque N accepté finit au plus tard à (1 + beta) * d_j
+    criterion: str = "total"  # NEW : critère sur les E, total | indiv (sous-dossier du même nom dans output_root et analysis_root)
 ):
     variant = os.path.splitext(os.path.basename(input_path))[0]
     delta_name = f"delta_{str(delta_ratio).replace('.', '_')}"
 
     output_dir = os.path.join(
         output_root,
+        criterion,  # NEW
         scenario,
         delta_name,
         inst,
@@ -56,6 +59,7 @@ def run_one_controlled_instance(
     analysis_dir = os.path.join(
         # ANALYSIS_ROOT,  # OLD (codé en dur : un test avec d'autres poids écrasait les analyses existantes)
         analysis_root,  # NEW
+        criterion,  # NEW
         scenario,
         delta_name,
         inst,
@@ -80,6 +84,8 @@ def run_one_controlled_instance(
     print(f"Inst            : {inst}")
     print(f"Variant         : {variant}")
     print(f"Delta           : {delta_ratio}")
+    print(f"Beta            : {beta_ratio}")  # NEW
+    print(f"Critère E       : {criterion}")  # NEW
     print(f"Output dir      : {output_dir}")
     print(f"Analysis dir    : {analysis_dir}")
     print("==================================================")
@@ -105,7 +111,9 @@ def run_one_controlled_instance(
         gantt_dir=gantt_dir,
         save_step_gantts=save_step_gantts,
         analysis_dir=analysis_dir,
-        epsilon_window=epsilon_window,  # NEW
+        # epsilon_window=epsilon_window,  # OLD
+        beta_ratio=beta_ratio,  # NEW
+        criterion=criterion,  # NEW
         use_beam=use_beam,
         improve=improve,
         beam_width=beam_width
@@ -133,6 +141,8 @@ def run_one_controlled_instance(
                 "inst",
                 "variant",
                 "delta_ratio",
+                "beta_ratio",  # NEW
+                "criterion",  # NEW
                 "nb_orders",
                 "nb_jobs",
                 "nb_new_jobs",
@@ -154,6 +164,8 @@ def run_one_controlled_instance(
             "inst": inst,
             "variant": variant,
             "delta_ratio": delta_ratio,
+            "beta_ratio": beta_ratio,  # NEW
+            "criterion": criterion,  # NEW
             "nb_orders": len(order_instance.orders),
             "nb_jobs": order_instance.nb_jobs,
             "nb_new_jobs": nb_new_jobs,
@@ -181,7 +193,7 @@ def run_one_controlled_instance(
         gnn_gantt(
             gantt_path,
             final_state,
-            f"{scenario}/{inst}/{variant}/delta={delta_ratio}",
+            f"{scenario}/{inst}/{variant}/delta={delta_ratio}/beta={beta_ratio}/{criterion}",  # NEW (OLD: sans beta)
             cut_times=cut_times
         )
     else:
@@ -201,6 +213,8 @@ def run_one_controlled_instance(
                 "variant",
                 "input_path",
                 "delta_ratio",
+                "beta_ratio",  # NEW
+                "criterion",  # NEW
                 "cut_times",
                 "nb_orders",
                 "nb_jobs",
@@ -220,6 +234,8 @@ def run_one_controlled_instance(
             "variant": variant,
             "input_path": input_path,
             "delta_ratio": delta_ratio,
+            "beta_ratio": beta_ratio,  # NEW
+            "criterion": criterion,  # NEW
             "cut_times": cut_times,
             "nb_orders": len(order_instance.orders),
             "nb_jobs": order_instance.nb_jobs,
@@ -257,7 +273,9 @@ def run_all_controlled_instances(
     improve: bool = True,
     beam_width: int = BEAM_WIDTH,
     analysis_root: str = ANALYSIS_ROOT,  # NEW
-    epsilon_window: float = 0.0  # NEW (OLD: 0.2)
+    # epsilon_window: float = 0.0  # OLD
+    beta_values: list[float] | None = None,  # NEW : un dossier de résultats par beta (suffixe _beta_x des racines)
+    criteria: list[str] | None = None  # NEW : critères E (total, indiv), un sous-dossier par critère
 ):
     """
     Lance la méthode d'acceptation sur toutes les instances contenues dans root_dir.
@@ -286,9 +304,18 @@ def run_all_controlled_instances(
     print(f"Generate Gantt: {generate_gantts}")
     print("=" * 80)
 
-    for delta_ratio in delta_values:
+    # NEW : boucle sur beta ; output_root et analysis_root reçoivent le suffixe _beta_x (ex. analysis_..._beta_0_1)
+    # pour garder la structure scenario/delta_x/... attendue par build_analysis_tables.py.
+    beta_values = beta_values if beta_values else [0.1]  # NEW
+    print(f"Betas         : {beta_values}")  # NEW
+    criteria = criteria if criteria else ["total"]  # NEW
+    print(f"Critères E    : {criteria}")  # NEW
+    # runs = [(b, d) for b in beta_values for d in delta_values]  # OLD
+    runs = [(c, b, d) for c in criteria for b in beta_values for d in delta_values]  # NEW
+    for criterion, beta_ratio, delta_ratio in runs:  # NEW (OLD: for delta_ratio in delta_values:)
+        beta_suffix = f"_beta_{str(beta_ratio).replace('.', '_')}"  # NEW
         print("\n" + "=" * 80)
-        print(f"LANCEMENT POUR DELTA = {delta_ratio}")
+        print(f"LANCEMENT POUR DELTA = {delta_ratio} | BETA = {beta_ratio} | CRITERE E = {criterion}")  # NEW (OLD: sans beta)
         print("=" * 80)
 
         for input_file in json_files:
@@ -325,7 +352,7 @@ def run_all_controlled_instances(
             try:
                 run_one_controlled_instance(
                     input_path=str(input_file),
-                    output_root=output_root,
+                    output_root=output_root + beta_suffix,  # NEW (OLD: output_root)
                     scenario=scenario,
                     inst=inst,
                     delta_ratio=delta_ratio,
@@ -336,8 +363,10 @@ def run_all_controlled_instances(
                     use_beam=use_beam,
                     improve=improve,
                     beam_width=beam_width,
-                    analysis_root=analysis_root,  # NEW
-                    epsilon_window=epsilon_window  # NEW
+                    analysis_root=analysis_root + beta_suffix,  # NEW (OLD: analysis_root)
+                    # epsilon_window=epsilon_window  # OLD
+                    beta_ratio=beta_ratio,  # NEW
+                    criterion=criterion  # NEW
                 )
 
             except Exception as e:
@@ -568,7 +597,11 @@ if __name__ == "__main__":
     parser.add_argument("--beam", type=str, choices=["true", "false"], default="true", help="Utiliser le beam search guidé par le GNN")
     parser.add_argument("--improve", type=str, choices=["true", "false"], default="true", help="Appliquer la recherche locale au cut sur les solutions terminées")
     parser.add_argument("--beam_width", type=int, default=BEAM_WIDTH, help="Largeur du beam")
-    parser.add_argument("--epsilon", type=float, default=0.0, help="Retard initial nul : chaque job existant peut finir en retard d'au plus epsilon * (d_j - r_j)")  # NEW (OLD: default=0.2)
+    # parser.add_argument("--epsilon", type=float, default=0.0, help="Retard initial nul : chaque job existant peut finir en retard d'au plus epsilon * (d_j - r_j)")  # OLD
+    parser.add_argument("--beta", type=float, default=0.1, help="Mode one : chaque N accepté finit au plus tard à (1 + beta) * d_j")  # NEW
+    parser.add_argument("--criterion", type=str, choices=["total", "indiv"], default="total", help="Mode one : critère E, total (somme des wT des E) ou indiv (chaque E)")  # NEW
+    parser.add_argument("--criteria", type=str, nargs="+", choices=["total", "indiv"], default=None, help="Mode all : ex. --criteria total indiv (sous-dossiers total/ et indiv/)")  # NEW
+    parser.add_argument("--betas", type=float, nargs="+", default=None, help="Mode all : liste de beta, ex: --betas 0.1 0.2 (suffixe _beta_x ajouté à output_root et analysis_root)")  # NEW
     parser.add_argument("--analysis_root", type=str, default=ANALYSIS_ROOT, help="Dossier racine des analyses (summary.csv, tableaux d'acceptation)")  # NEW
     parser.add_argument("--num_cpus", type=int, default=8, help="Nombre de CPU pour Ray (expansion du beam)")
     args = parser.parse_args()
@@ -594,7 +627,9 @@ if __name__ == "__main__":
             improve=improve,
             beam_width=args.beam_width,
             analysis_root=args.analysis_root,  # NEW
-            epsilon_window=args.epsilon  # NEW
+            # epsilon_window=args.epsilon  # OLD
+            beta_values=args.betas if args.betas is not None else [args.beta],  # NEW
+            criteria=args.criteria if args.criteria is not None else [args.criterion]  # NEW
         ) 
     else:
         if args.input is None: raise ValueError("En mode one, tu dois fournir --input")
@@ -614,5 +649,7 @@ if __name__ == "__main__":
             improve=improve,
             beam_width=args.beam_width,
             analysis_root=args.analysis_root,  # NEW
-            epsilon_window=args.epsilon  # NEW
+            # epsilon_window=args.epsilon  # OLD
+            beta_ratio=args.beta,  # NEW
+            criterion=args.criterion  # NEW
         )
