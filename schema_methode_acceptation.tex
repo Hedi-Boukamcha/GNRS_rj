@@ -1,0 +1,195 @@
+% schema_methode_acceptation.tex
+% Schemas de la methode d'acceptation (complete agent) :
+%   Fig. 1 : vue globale (ordre 1 -> ordres suivants -> recherche -> re-cedulation)
+%   Fig. 2 : recherche bidirectionnelle (backward + forward, elagage partage)
+%   Fig. 3 : evaluation d'un sous-ensemble N (branches + criteres d'acceptation)
+% Compilation : pdflatex schema_methode_acceptation.tex
+\documentclass[11pt]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[french]{babel}
+\usepackage{amsmath,amssymb}
+\usepackage[margin=1.8cm]{geometry}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta,shapes.geometric,shapes.misc,fit,backgrounds,calc}
+
+\tikzset{
+  base/.style   = {draw, thick, align=center, font=\small, minimum height=9mm, inner sep=4pt},
+  proc/.style   = {base, rectangle, rounded corners=2pt, fill=blue!7, text width=7.2cm},
+  procw/.style  = {base, rectangle, rounded corners=2pt, fill=blue!7, text width=5.4cm},
+  io/.style     = {base, trapezium, trapezium left angle=72, trapezium right angle=108,
+                   trapezium stretches body, fill=gray!12, text width=6.4cm},
+  term/.style   = {base, rounded rectangle, fill=green!12, text width=4.8cm},
+  stopn/.style  = {base, rounded rectangle, fill=red!10, text width=4.2cm},
+  dec/.style    = {base, diamond, aspect=2.4, fill=orange!14, text width=3.6cm, inner sep=1pt},
+  crit/.style   = {base, rectangle, fill=yellow!15, text width=7.2cm},
+  note/.style   = {font=\footnotesize\itshape, align=left, text width=4.2cm},
+  arr/.style    = {-{Stealth[length=2.6mm]}, thick},
+  lab/.style    = {font=\footnotesize, fill=white, inner sep=1.5pt},
+  group/.style  = {draw, dashed, rounded corners=4pt, inner sep=7pt, gray!70},
+  gtitle/.style = {font=\footnotesize\bfseries, gray!80!black, anchor=south west},
+}
+
+\begin{document}
+
+% =====================================================================
+\section*{1. Vue globale de la méthode d'acceptation}
+% =====================================================================
+\begin{figure}[h!]
+\centering
+\begin{tikzpicture}[
+    node distance=10mm,
+    box/.style  = {base, rectangle, rounded corners=2pt, fill=blue!7, text width=5.6cm},
+    gdec/.style = {dec, aspect=2, text width=2.4cm},
+  ]
+  \node[term] (start) {Ordre 1 : jobs existants $E$};
+  \node[box, below=of start] (o1) {\textbf{Céduler $E$}\\(agent GNN)};
+  \node[box, below=of o1, fill=gray!12] (next) {\textbf{Nouvel ordre}\\temps de coupe $t_c$, nouveaux jobs $\mathcal{N}$};
+  \node[box, below=of next, fill=purple!10] (bfs) {\textbf{Choisir les nouveaux jobs à accepter}\\recherche bidirectionnelle (Fig.~2)\\$\Rightarrow N^\star \subseteq \mathcal{N}$};
+  \node[gdec, below=of bfs] (empty) {$N^\star$ vide ?};
+  \node[box, below=of empty] (final) {\textbf{Re-céduler $E \cup N^\star$}\\à partir de $t_c$ (Fig.~3)};
+  \node[gdec, below=of final] (more) {Autre ordre ?};
+  \node[term, below=of more] (out) {Cédule finale};
+
+  \node[box, text width=3.6cm, right=18mm of empty] (keep) {\textbf{Garder}\\la cédule actuelle\\(tous les nouveaux jobs rejetés)};
+
+  % fleches principales (verticales)
+  \draw[arr] (start) -- (o1);
+  \draw[arr] (o1) -- (next);
+  \draw[arr] (next) -- (bfs);
+  \draw[arr] (bfs) -- (empty);
+  \draw[arr] (empty) -- node[lab, right]{non} (final);
+  \draw[arr] (final) -- (more);
+  \draw[arr] (more) -- node[lab, right]{non} (out);
+
+  % N* vide -> garder -> autre ordre ?
+  \draw[arr] (empty) -- node[lab, above]{oui} (keep);
+  \draw[arr] (keep.south) |- (more.east);
+
+  % boucle : autre ordre -> nouvel ordre (par la gauche)
+  \coordinate (lx) at ($(final.west)+(-14mm,0)$);
+  \draw[arr] (more.west) -- node[lab, above]{oui} (more.west -| lx) -- (lx |- next) -- (next.west);
+
+\end{tikzpicture}
+\caption{Vue globale. À chaque nouvel ordre, on choisit le plus grand sous-ensemble $N^\star$ de nouveaux jobs acceptable, puis on re-cédule les jobs existants et $N^\star$ à partir du temps de coupe.}
+\end{figure}
+
+\clearpage
+% =====================================================================
+\section*{2. Recherche bidirectionnelle (backward + forward)}
+% =====================================================================
+\begin{figure}[h!]
+\centering
+\begin{tikzpicture}[
+    node distance=10mm,
+    col/.style = {base, rectangle, rounded corners=2pt, fill=blue!7, text width=4.6cm},
+    cdec/.style = {dec, aspect=2, text width=2.6cm},
+  ]
+  % ---------------- haut : initialisation + boucle ----------------
+  \node[proc, text width=10cm] (init) {\textbf{Initialisation}\\
+     $\mathcal{B}=\{\mathcal{N}\}$ (backward : tous les nouveaux jobs) \qquad $\mathcal{F}=\{\{j\}: j\in \mathcal{N}\}$ (forward : singletons)\\
+     $N^\star=\emptyset$ \qquad élagués $=\emptyset$ (partagé)};
+  \node[cdec, below=of init] (loop) {$\mathcal{B}$ ou $\mathcal{F}$\\non vide ?};
+
+  % ---------------- colonne BACKWARD (gauche) ----------------
+  \coordinate (bc) at ($(loop.south)+(-4.1,-16mm)$);
+  \node[col, anchor=north] (b1) at (bc) {\textbf{1. Un niveau backward}\\évaluer chaque $N\in\mathcal{B}$ (Fig.~3)\\(sauf s'il contient un élagué)};
+  \node[col, below=of b1] (b2) {$N$ non acceptable $\Rightarrow$ $N$ élagué\\niveau suivant : \textbf{tous} les $N\setminus\{j\}$,\\pour chaque $j\in N$ (taille $k-1$)};
+  \node[cdec, below=of b2] (bdec) {un $N$ acceptable\\à ce niveau ?};
+  \node[stopn, below=of bdec] (bstop) {$N^\star$ = meilleur du niveau\\\textbf{FIN}};
+
+  % ---------------- colonne FORWARD (droite) ----------------
+  \coordinate (fc) at ($(loop.south)+(4.1,-16mm)$);
+  \node[col, anchor=north] (f1) at (fc) {\textbf{2. Un niveau forward}\\évaluer chaque $N\in\mathcal{F}$ (Fig.~3)\\(sauf s'il contient un élagué)};
+  \node[col, below=of f1] (f2) {acceptable $\Rightarrow$ $N^\star$ mis à jour\\et niveau suivant : $N\cup\{j\}$\\non acceptable $\Rightarrow$ élagué};
+  \node[cdec, below=of f2] (fdec) {$|N^\star| >$ taille\\du niveau $\mathcal{B}$ ?};
+  \node[col, below=of fdec] (fstop) {backward inutile\\$\Rightarrow$ $\mathcal{B}=\emptyset$};
+
+  % ---------------- sortie ----------------
+  \coordinate (oc) at ($(bstop.south -| loop)+(0,-16mm)$);
+  \node[term, anchor=north] (out) at (oc) {Retour : $N^\star$};
+
+  % ---------------- fleches ----------------
+  % init -> boucle
+  \draw[arr] (init) -- (loop);
+  % boucle oui -> backward
+  \draw[arr] (loop.south) -- ++(0,-6mm) -| node[lab, pos=0.25, above]{oui} (b1.north);
+  % colonne backward
+  \draw[arr] (b1) -- (b2);
+  \draw[arr] (b2) -- (bdec);
+  \draw[arr] (bdec) -- node[lab, right]{oui} (bstop);
+  % backward non -> forward (par le couloir central)
+  \draw[arr, blue!60!black] (bdec.east) -- node[lab, above, pos=0.35]{non} ++(12mm,0)
+        |- (f1.west);
+  % colonne forward
+  \draw[arr] (f1) -- (f2);
+  \draw[arr] (f2) -- (fdec);
+  \draw[arr] (fdec) -- node[lab, right]{oui} (fstop);
+  % forward -> retour a la boucle (par la droite)
+  \coordinate (rx) at ($(f1.east)+(14mm,0)$);
+  \draw[thick, gray!60!black] (fdec.east) -- node[lab, above]{non} (fdec.east -| rx);
+  \draw[arr, gray!60!black] (fstop.east) -- (fstop.east -| rx) -- (rx |- loop) node[lab, pos=0.5, right]{itération suivante} -- (loop.east);
+  % fin backward -> sortie
+  \draw[arr] (bstop.south) |- ($(out.north)+(0,6mm)$) -- (out.north);
+  % boucle non -> sortie (par la gauche)
+  \coordinate (lx) at ($(b1.west)+(-14mm,0)$);
+  \draw[arr] (loop.west) -- node[lab, above]{non} (loop.west -| lx) -- (lx |- out) -- (out.west);
+
+  % ---------------- cadres ----------------
+  \begin{scope}[on background layer]
+    \node[group, fit=(b1)(b2)(bdec)(bstop)] (gb) {};
+    \node[group, fit=(f1)(f2)(fdec)(fstop)] (gf) {};
+  \end{scope}
+  \node[gtitle, text=red!70!black]   at (gb.north west) {BACKWARD (retire 1 job)};
+  \node[gtitle, text=green!45!black] at (gf.north west) {FORWARD (ajoute 1 job)};
+
+\end{tikzpicture}
+\caption{Recherche bidirectionnelle : à chaque itération, un niveau backward (1) puis un niveau forward (2). $N^\star$ = le plus grand $N$ acceptable ; à taille égale, le plus petit $\big(\sum_{E\cup N} w_jT_j,\ \sum_{E} w_jT_j,\ \sum_{N} w_jT_j\big)$.}
+\end{figure}
+
+\clearpage
+% =====================================================================
+\section*{3. Évaluation d'un sous-ensemble $N$ et critères d'acceptation}
+% =====================================================================
+\begin{figure}[h!]
+\centering
+\begin{tikzpicture}[node distance=6mm and 10mm]
+
+  \node[proc, text width=9cm] (cut) {\textbf{État au cut} : cédule courante reconstruite à $t_c$\\(opérations commencées avant $t_c$ figées) + ajout des jobs de $N$\\$t_w$ = prochain instant où les ressources se libèrent};
+
+  \node[dec, below left=8mm and -14mm of cut] (dimm) {robot libre \textbf{et}\\$\geq 1$ machine libre\\à $t_c$ ?};
+  \node[dec, below right=8mm and -14mm of cut] (ddel) {$t_w > t_c$ ?};
+
+  \node[procw, below=of dimm] (bimm) {\textbf{Branche immédiate}\\rollout GNN complet\\depuis $t_c$};
+  \node[procw, below=of ddel] (bdel) {\textbf{Branche différée}\\rollout GNN complet\\depuis $t_w$ (état reconstruit à $t_w$)};
+
+  \coordinate (chref) at (bimm.south -| cut);
+  \node[proc, below=12mm of chref, text width=9cm] (choose) {\textbf{Choix de la branche} (branches faisables)\\$\big(\sum_{E\cup N} w_jT_j,\ \sum_E w_jT_j,\ \sum_N w_jT_j\big)$ minimal};
+
+  \node[crit, below=of choose, text width=9cm] (critN) {\textbf{Critère N} (tous les nouveaux jobs) :\quad $C_j \le (1+\beta)\,d_j \quad \forall j\in N$, \quad $\beta\in\{0.1,\,0.2\}$};
+  \node[crit, below=of critN, text width=9cm] (critE) {\textbf{Critère E} (selon \texttt{--criterion}) :\\[2pt]
+     \texttt{total} : $\displaystyle\sum_{j\in E} w_jT_j \le (1+\delta)\,\mathrm{cost}_{\mathrm{ref}}$\\[2pt]
+     \texttt{indiv} : $w_jT_j \le (1+\delta)\,w_jT_j^{\mathrm{init}} \quad \forall j\in E$};
+  \node[dec, below=of critE] (ok) {N \textbf{et} E\\respectés ?};
+  \node[term, below left=6mm and 4mm of ok] (acc) {$N$ \textbf{acceptable}\\(clé retournée à la recherche)};
+  \node[stopn, below right=6mm and 4mm of ok] (rej) {$N$ \textbf{non acceptable}\\$\Rightarrow$ ajouté à \texttt{pruned\_keys}};
+
+  \draw[arr] (cut.south) -- ++(0,-2mm) -| (dimm.north);
+  \draw[arr] (cut.south) -- ++(0,-2mm) -| (ddel.north);
+  \draw[arr] (dimm) -- node[lab, right]{oui} (bimm);
+  \draw[arr] (ddel) -- node[lab, right]{oui} (bdel);
+  \draw[arr] (bimm.south) -- ++(0,-5mm) -| ($(choose.north)+(-1.5,0)$);
+  \draw[arr] (bdel.south) -- ++(0,-5mm) -| ($(choose.north)+(1.5,0)$);
+  \draw[arr, dashed] (dimm.west) -- node[lab, above]{non} ++(-6mm,0) node[left, font=\footnotesize, align=right]{pas de\\branche\\immédiate};
+  \draw[arr, dashed] (ddel.east) -- node[lab, above]{non} ++(6mm,0) node[right, font=\footnotesize, align=left]{pas de\\branche\\différée};
+  \draw[arr] (choose) -- (critN);
+  \draw[arr] (critN) -- (critE);
+  \draw[arr] (critE) -- (ok);
+  \draw[arr] (ok.west) -| node[lab, pos=0.25, above]{oui} (acc.north);
+  \draw[arr] (ok.east) -| node[lab, pos=0.25, above]{non} (rej.north);
+
+\end{tikzpicture}
+\caption{Évaluation d'un sous-ensemble $N$. Si aucune branche n'est faisable, $N$ est non acceptable. Lorsque $\mathrm{cost}_{\mathrm{ref}}=0$ (ou $T_j^{\mathrm{init}}=0$ en \texttt{indiv}), le critère E devient strict : aucun retard supplémentaire toléré.}
+\end{figure}
+
+\end{document}
