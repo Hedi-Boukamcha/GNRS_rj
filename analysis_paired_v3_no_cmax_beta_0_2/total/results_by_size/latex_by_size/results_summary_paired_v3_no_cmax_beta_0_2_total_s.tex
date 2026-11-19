@@ -1,0 +1,41 @@
+\begin{table*}[p]
+\centering
+\large
+\caption{Complete agent (paired v3 no cmax), $\beta=0.2$, total E criterion -- summary results for Small instances: minimum, average and maximum per scenario and cut-time tier, by acceptance-tolerance level $\Delta$. For $\Delta wT_j^E$, Min and Max are absolute changes and Avg (\%) is the total change relative to the total initial weighted tardiness of existing jobs, $100 \sum \Delta wT_j^E / \sum wT_j^{E,\mathrm{init}}$ (0.0 when both are zero, -- when only the initial tardiness is zero).}
+\label{tab:results_summary_paired_v3_no_cmax_beta_0_2_total_s}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{ll|ccccccccc|ccccccccc|ccccccccc}
+\toprule
+ & & \multicolumn{9}{c}{$\Delta=0.1$} & \multicolumn{9}{c}{$\Delta=0.2$} & \multicolumn{9}{c}{$\Delta=0.5$} \\
+\cmidrule(lr){3-11} \cmidrule(lr){12-20} \cmidrule(lr){21-29}
+ & & \multicolumn{3}{c}{$\Delta wT_j^E$} & \multicolumn{3}{c}{Acc.\ (\%)} & \multicolumn{3}{c}{Time (s)} & \multicolumn{3}{c}{$\Delta wT_j^E$} & \multicolumn{3}{c}{Acc.\ (\%)} & \multicolumn{3}{c}{Time (s)} & \multicolumn{3}{c}{$\Delta wT_j^E$} & \multicolumn{3}{c}{Acc.\ (\%)} & \multicolumn{3}{c}{Time (s)} \\
+\cmidrule(lr){3-5} \cmidrule(lr){6-8} \cmidrule(lr){9-11} \cmidrule(lr){12-14} \cmidrule(lr){15-17} \cmidrule(lr){18-20} \cmidrule(lr){21-23} \cmidrule(lr){24-26} \cmidrule(lr){27-29}
+Scenario & Tier & Min & Avg (\%) & Max & Min & Avg & Max & Min & Avg & Max & Min & Avg (\%) & Max & Min & Avg & Max & Min & Avg & Max & Min & Avg (\%) & Max & Min & Avg & Max & Min & Avg & Max \\
+\midrule
+Same costs, E/N 5/5 & Early & 0.0 & 0.0 & 0.0 & 0 & 0 & 0 & 1.49 & 3.95 & 6.83 & 0.0 & 0.0 & 0.0 & 0 & 0 & 0 & 1.44 & 3.94 & 6.74 & 0.0 & 3.6 & 7.0 & 0 & 2 & 50 & 1.49 & 4.13 & 8.22 \\
+ & Middle & 0.0 & 0.0 & 0.0 & 0 & 25 & 100 & 1.46 & 4.14 & 8.86 & 0.0 & 0.0 & 0.0 & 0 & 25 & 100 & 1.47 & 4.12 & 8.82 & 0.0 & 0.0 & 0.0 & 0 & 25 & 100 & 1.54 & 4.24 & 8.99 \\
+ & Late & 0.0 & 0.0 & 0.0 & 0 & 72 & 100 & 1.44 & 3.83 & 7.53 & 0.0 & 0.0 & 0.0 & 0 & 72 & 100 & 1.42 & 3.83 & 7.59 & 0.0 & 0.0 & 0.0 & 0 & 72 & 100 & 1.44 & 3.95 & 7.66 \\
+\midrule
+Diff. costs, E/N 5/5 & Early & 0.0 & 0.0 & 0.0 & 0 & 0 & 0 & 1.43 & 3.93 & 6.67 & 0.0 & 0.0 & 0.0 & 0 & 0 & 0 & 1.44 & 3.99 & 6.80 & 0.0 & 3.5 & 6.3 & 0 & 2 & 50 & 1.53 & 4.13 & 8.28 \\
+ & Middle & 0.0 & 0.0 & 0.0 & 0 & 25 & 100 & 1.42 & 3.83 & 8.52 & 0.0 & 0.0 & 0.0 & 0 & 25 & 100 & 1.46 & 3.90 & 8.57 & 0.0 & 0.0 & 0.0 & 0 & 25 & 100 & 1.46 & 3.98 & 8.78 \\
+ & Late & 0.0 & 0.0 & 0.0 & 0 & 70 & 100 & 1.38 & 3.70 & 7.47 & 0.0 & 0.0 & 0.0 & 0 & 70 & 100 & 1.38 & 3.75 & 7.52 & 0.0 & 0.0 & 0.0 & 0 & 70 & 100 & 1.51 & 3.83 & 7.64 \\
+\midrule
+Same costs, E/N 3/7 & Early & 0.0 & 0.0 & 0.0 & 0 & 3 & 33 & 2.23 & 3.87 & 6.06 & 0.0 & 0.0 & 0.0 & 0 & 3 & 33 & 2.27 & 3.89 & 6.06 & 0.0 & 0.0 & 0.0 & 0 & 3 & 33 & 2.31 & 3.96 & 6.16 \\
+ & Middle & 0.0 & 0.0 & 0.0 & 0 & 15 & 50 & 2.15 & 4.18 & 7.88 & 0.0 & 0.0 & 0.0 & 0 & 15 & 50 & 2.16 & 4.21 & 7.94 & 0.0 & 0.0 & 0.0 & 0 & 15 & 50 & 2.20 & 4.37 & 8.17 \\
+ & Late & 0.0 & 0.0 & 0.0 & 33 & 50 & 67 & 2.89 & 6.37 & 10.14 & 0.0 & 0.0 & 0.0 & 33 & 50 & 67 & 2.94 & 6.41 & 10.19 & 0.0 & 0.0 & 0.0 & 33 & 50 & 67 & 3.13 & 6.59 & 10.54 \\
+\midrule
+Diff. costs, E/N 3/7 & Early & 0.0 & 0.0 & 0.0 & 0 & 3 & 33 & 2.26 & 3.87 & 6.16 & 0.0 & 0.0 & 0.0 & 0 & 3 & 33 & 2.27 & 3.96 & 6.24 & 0.0 & 0.0 & 0.0 & 0 & 3 & 33 & 2.31 & 4.00 & 6.19 \\
+ & Middle & 0.0 & 0.0 & 0.0 & 0 & 18 & 50 & 2.11 & 4.32 & 7.61 & 0.0 & 0.0 & 0.0 & 0 & 18 & 50 & 2.16 & 4.41 & 7.88 & 0.0 & 0.0 & 0.0 & 0 & 18 & 50 & 2.14 & 4.47 & 7.91 \\
+ & Late & 0.0 & 0.0 & 0.0 & 33 & 50 & 67 & 2.86 & 6.28 & 10.10 & 0.0 & 0.0 & 0.0 & 33 & 50 & 67 & 2.94 & 6.41 & 10.32 & 0.0 & 0.0 & 0.0 & 33 & 50 & 67 & 3.09 & 6.46 & 10.16 \\
+\midrule
+Same costs, E/N 7/3 & Early & 0.0 & 0.0 & 0.0 & 0 & 5 & 100 & 1.54 & 3.00 & 4.84 & 0.0 & 0.0 & 0.0 & 0 & 5 & 100 & 1.48 & 2.98 & 4.83 & 0.0 & 0.0 & 0.0 & 0 & 5 & 100 & 1.51 & 3.05 & 5.00 \\
+ & Middle & 0.0 & 0.0 & 0.0 & 0 & 35 & 100 & 1.50 & 2.82 & 4.87 & 0.0 & 10.4 & 14.0 & 0 & 45 & 100 & 1.45 & 2.86 & 4.74 & 0.0 & 10.4 & 14.0 & 0 & 45 & 100 & 1.55 & 2.95 & 4.91 \\
+ & Late & 0.0 & 0.0 & 0.0 & 0 & 85 & 100 & 1.57 & 2.77 & 4.35 & 0.0 & 0.5 & 1.0 & 0 & 90 & 100 & 1.50 & 2.79 & 4.26 & 0.0 & 0.5 & 1.0 & 0 & 90 & 100 & 1.60 & 2.86 & 4.35 \\
+\midrule
+Diff. costs, E/N 7/3 & Early & 0.0 & 0.0 & 0.0 & 0 & 10 & 100 & 1.42 & 2.94 & 5.04 & 0.0 & 0.0 & 0.0 & 0 & 10 & 100 & 1.48 & 2.99 & 5.13 & 0.0 & 0.0 & 0.0 & 0 & 10 & 100 & 1.53 & 3.03 & 5.16 \\
+ & Middle & 0.0 & 0.0 & 0.0 & 0 & 40 & 100 & 1.43 & 2.82 & 4.71 & 0.0 & 0.0 & 0.0 & 0 & 40 & 100 & 1.46 & 2.85 & 4.75 & 0.0 & 0.0 & 0.0 & 0 & 40 & 100 & 1.49 & 2.89 & 4.77 \\
+ & Late & 0.0 & 0.0 & 0.0 & 0 & 90 & 100 & 1.54 & 2.74 & 4.02 & 0.0 & 0.0 & 0.0 & 0 & 90 & 100 & 1.49 & 2.77 & 4.07 & 0.0 & 0.0 & 0.0 & 0 & 90 & 100 & 1.60 & 2.80 & 4.13 \\
+\bottomrule
+\end{tabular}%
+}
+\end{table*}
