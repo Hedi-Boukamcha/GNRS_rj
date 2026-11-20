@@ -87,28 +87,28 @@ def stat_label(col: str, sname: str, stat: str) -> str:  # NEW
     return rf"{stat} (\%)" if col == "delta_tjE" else stat  # NEW : Min, Avg et Max en %
 
 
-# OLD : % par instance (denominateur = retard initial de l'instance, instances a 0 ignorees)
+# OLD : denominateur = retard initial MOYEN de la cellule (Max pouvait depasser 100 %)
 # def delta_tjE_percent_extreme(cell_df: pd.DataFrame, sname: str) -> str:  # NEW
-#     """Min / Max de Delta wT_j^E en % du retard pondéré initial des E, PAR instance.
-#     Les instances dont le retard initial vaut 0 sont ignorées (pourcentage indéfini) ;
-#     si toutes sont ignorées : 0.0 si aucun changement, -- sinon."""
-#     initial = pd.to_numeric(cell_df["wT_E_initial"], errors="coerce")
+#     """Min / Max de Delta wT_j^E en %, meme denominateur que Avg : retard pondere initial MOYEN de la cellule.
+#     p_i = 100 * Delta_i / mean(wT_E_initial) ; toutes les instances incluses ; mean(p_i) = Avg (%)."""
+#     initial = pd.to_numeric(cell_df["wT_E_initial"], errors="coerce").mean()
 #     change  = pd.to_numeric(cell_df["delta_tjE"], errors="coerce")
-#     valid = initial > 1e-9
-#     if not valid.any():
+#     if initial <= 1e-9:
 #         return "0.0" if (change.abs() <= 1e-9).all() else "--"
-#     pct = 100 * change[valid] / initial[valid]
+#     pct = 100 * change / initial
 #     return f"{(pct.min() if sname == 'min' else pct.max()):.1f}"
 
-
+# NEW : % propre a chaque instance (denominateur = retard initial de l'instance, instances a 0 exclues)
 def delta_tjE_percent_extreme(cell_df: pd.DataFrame, sname: str) -> str:  # NEW
-    """Min / Max de Delta wT_j^E en %, meme denominateur que Avg : retard pondere initial MOYEN de la cellule.
-    p_i = 100 * Delta_i / mean(wT_E_initial) ; toutes les instances incluses ; mean(p_i) = Avg (%)."""
-    initial = pd.to_numeric(cell_df["wT_E_initial"], errors="coerce").mean()
+    """Min / Max de Delta wT_j^E en % du retard pondéré initial des E, PAR instance.
+    Les instances dont le retard initial vaut 0 sont ignorées (pourcentage indéfini) ;
+    si toutes sont ignorées : 0.0 si aucun changement, -- sinon."""
+    initial = pd.to_numeric(cell_df["wT_E_initial"], errors="coerce")
     change  = pd.to_numeric(cell_df["delta_tjE"], errors="coerce")
-    if initial <= 1e-9:
+    valid = initial > 1e-9
+    if not valid.any():
         return "0.0" if (change.abs() <= 1e-9).all() else "--"
-    pct = 100 * change / initial
+    pct = 100 * change[valid] / initial[valid]
     return f"{(pct.min() if sname == 'min' else pct.max()):.1f}"
 
 
@@ -186,11 +186,11 @@ def build_latex(df: pd.DataFrame, size: str, method_name: str, method_title: str
         caption += (
             # r" For $\Delta wT_j^E$, Min and Max are absolute changes and Avg (\%) is the total change "  # OLD
             r" For $\Delta wT_j^E$, all values are percentages of the initial weighted tardiness of existing jobs: "  # NEW
-            # r"Min (\%) and Max (\%) are taken over instances, $100\,\Delta wT_j^E / wT_j^{E,\mathrm{init}}$ "  # OLD
-            # r"(instances with zero initial tardiness are excluded), and Avg (\%) is the total change "  # OLD
-            r"Min (\%) and Max (\%) are the smallest and largest per-instance change relative to the mean initial "  # NEW
-            r"weighted tardiness of existing jobs in the cell, $100\,\Delta wT_j^E / \overline{wT_j^{E,\mathrm{init}}}$, "  # NEW
-            r"and Avg (\%) is the total change "  # NEW
+            r"Min (\%) and Max (\%) are taken over instances, $100\,\Delta wT_j^E / wT_j^{E,\mathrm{init}}$ "  # NEW
+            r"(instances with zero initial tardiness are excluded), and Avg (\%) is the total change "  # NEW
+            # r"Min (\%) and Max (\%) are the smallest and largest per-instance change relative to the mean initial "  # OLD
+            # r"weighted tardiness of existing jobs in the cell, $100\,\Delta wT_j^E / \overline{wT_j^{E,\mathrm{init}}}$, "  # OLD
+            # r"and Avg (\%) is the total change "  # OLD
             r"relative to the total initial weighted tardiness of existing jobs, "
             r"$100 \sum \Delta wT_j^E / \sum wT_j^{E,\mathrm{init}}$ (0.0 when both are zero, -- when only the initial tardiness is zero)."
         )

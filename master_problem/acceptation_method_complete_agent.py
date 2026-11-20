@@ -485,7 +485,8 @@ def bfs_bidirectional(state: State, new_jobs: list[Job], cut_time: int, agent: A
     # NEW : deux critères cumulés (la fenêtre epsilon sur les E est supprimée) :
     #   1. E : cost_existants <= cost_ref * (1 + delta)  (si cost_ref = 0 : aucun retard pondéré des E toléré) ;
     #   2. N : chaque N du sous-ensemble finit au plus tard à (1 + beta) * d_j.
-    print(f"  critère N : C_j <= (1 + beta) * d_j, beta={beta_ratio}")  # NEW
+    # print(f"  critère N : C_j <= (1 + beta) * d_j, beta={beta_ratio}")  # OLD
+    print(f"  critère N : T_j <= (1 + beta) * d_j, beta={beta_ratio}")  # NEW
 
     # def is_acceptable(cost_existants, n_ok) -> bool:  # OLD (critère total seulement)
     #     return cost_existants <= cost_max + 1e-9 and n_ok
