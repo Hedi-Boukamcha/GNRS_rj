@@ -166,7 +166,7 @@
   \coordinate (chref) at (bimm.south -| cut);
   \node[proc, below=12mm of chref, text width=9cm] (choose) {\textbf{Choix de la branche} (branches faisables)\\$\big(\sum_{E\cup N} w_jT_j,\ \sum_E w_jT_j,\ \sum_N w_jT_j\big)$ minimal};
 
-  \node[crit, below=of choose, text width=9cm] (critN) {\textbf{Critère N} (tous les nouveaux jobs) :\quad $C_j \le (1+\beta)\,d_j \quad \forall j\in N$, \quad $\beta\in\{0.1,\,0.2\}$};
+  \node[crit, below=of choose, text width=9cm] (critN) {\textbf{Critère N} (tous les nouveaux jobs) :\quad $T_j \le (1+\beta)\,d_j \quad \forall j\in N$, \quad $\beta\in\{0.1,\,0.2\}$};
   \node[crit, below=of critN, text width=9cm] (critE) {\textbf{Critère E} (selon \texttt{--criterion}) :\\[2pt]
      \texttt{total} : $\displaystyle\sum_{j\in E} w_jT_j \le (1+\delta)\,\mathrm{cost}_{\mathrm{ref}}$\\[2pt]
      \texttt{indiv} : $w_jT_j \le (1+\delta)\,w_jT_j^{\mathrm{init}} \quad \forall j\in E$};

@@ -423,10 +423,14 @@ def evaluate_subset(base_cut_state: State,
     # print(f"    fenêtre (eps={epsilon_window}) : retards={[j.delay for j in existing_jobs]} | limites={[round(l, 2) for l in window_limits]} | ok={window_ok}")  # OLD
 
     # NEW (2e critère, remplace la fenêtre) : chaque N accepté doit finir au plus tard à (1 + beta) * d_j,
-    # c.-à-d. C_j <= (1 + beta) d_j  <=>  T_j <= beta * d_j.
+    # OLD : C_j <= (1 + beta) d_j ; NEW : T_j <= (1 + beta) d_j.
+    # n_limits = [(1 + beta_ratio) * j.job.due_date for j in new_jobs_states]  # OLD (C_j <= (1+beta) d_j)
+    # n_ok     = all(j.end <= lim + 1e-9 for j, lim in zip(new_jobs_states, n_limits))  # OLD
+    # print(f"    critère N (beta={beta_ratio}) : fins={[j.end for j in new_jobs_states]} | limites={[round(l, 2) for l in n_limits]} | ok={n_ok}")  # OLD
+    # NEW : regle sur le RETARD : T_j <= (1 + beta) d_j  (<=> C_j <= (2 + beta) d_j)
     n_limits = [(1 + beta_ratio) * j.job.due_date for j in new_jobs_states]  # NEW
-    n_ok     = all(j.end <= lim + 1e-9 for j, lim in zip(new_jobs_states, n_limits))  # NEW
-    print(f"    critère N (beta={beta_ratio}) : fins={[j.end for j in new_jobs_states]} | limites={[round(l, 2) for l in n_limits]} | ok={n_ok}")  # NEW
+    n_ok     = all(j.delay <= lim + 1e-9 for j, lim in zip(new_jobs_states, n_limits))  # NEW : T_j (j.delay) au lieu de C_j
+    print(f"    critère N (beta={beta_ratio}) : retards={[j.delay for j in new_jobs_states]} | limites={[round(l, 2) for l in n_limits]} | ok={n_ok}")  # NEW
 
     print(f"    tardiness nouveaux: {[j.delay for j in new_jobs_states]}")
     print(f"    weights nouveaux: {[round(all_weights[id(j.job)], 4) for j in new_jobs_states]}")
