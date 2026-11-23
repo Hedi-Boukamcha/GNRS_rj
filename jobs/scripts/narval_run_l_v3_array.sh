@@ -28,6 +28,9 @@
 #SBATCH --time=24:00:00
 #SBATCH --output=logs/%x-%A_%a.out
 #SBATCH --error=logs/%x-%A_%a.err
+#SBATCH --mail-user=hedi.boukamcha.1@ulaval.ca
+#SBATCH --mail-type=BEGIN,END,FAIL,TIME_LIMIT_80
+# Pour un mail par tache (24 x debut/fin) au lieu d'un seul pour tout l'array : ajouter ARRAY_TASKS
 
 set -euo pipefail
 
