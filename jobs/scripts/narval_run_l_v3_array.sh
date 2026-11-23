@@ -49,9 +49,12 @@ module load StdEnv/2023 python/3.11
 source "$HOME/envs/gnrs_rj/bin/activate"
 cd "$SLURM_SUBMIT_DIR"
 
-# Ray : un dossier temporaire par tache (evite les collisions entre taches sur le meme noeud)
-export RAY_TMPDIR="${SLURM_TMPDIR:-/tmp}/ray_${SLURM_ARRAY_JOB_ID}_${ID}"
+# Ray : un dossier temporaire par tache (evite les collisions entre taches sur le meme noeud).
+# Chemin COURT : Ray y cree des sockets AF_UNIX limitees a 107 caracteres
+# (OLD : $SLURM_TMPDIR/ray_<job>_<id> -> /localscratch/hedibk.<job>.<id>/ray_... trop long).
+export RAY_TMPDIR="/tmp/r_${SLURM_ARRAY_JOB_ID}_${ID}"
 mkdir -p "$RAY_TMPDIR"
+trap 'rm -rf "$RAY_TMPDIR"' EXIT
 
 echo "== Tache $ID (job $SLURM_ARRAY_JOB_ID) sur $(hostname) =="
 echo "Scenario=$SCENARIO | Critere=$CRITERION | Beta=$BETA | commit=$(git rev-parse --short HEAD)"
