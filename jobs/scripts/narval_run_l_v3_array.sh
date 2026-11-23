@@ -55,6 +55,7 @@ cd "$SLURM_SUBMIT_DIR"
 export RAY_TMPDIR="/tmp/r_${SLURM_ARRAY_JOB_ID}_${ID}"
 mkdir -p "$RAY_TMPDIR"
 trap 'rm -rf "$RAY_TMPDIR"' EXIT
+export PYTHONUNBUFFERED=1   # .out ecrit en temps reel (sinon Python bufferise la sortie)
 
 echo "== Tache $ID (job $SLURM_ARRAY_JOB_ID) sur $(hostname) =="
 echo "Scenario=$SCENARIO | Critere=$CRITERION | Beta=$BETA | commit=$(git rev-parse --short HEAD)"
