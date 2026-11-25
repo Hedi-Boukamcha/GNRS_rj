@@ -275,7 +275,8 @@ def run_all_controlled_instances(
     analysis_root: str = ANALYSIS_ROOT,  # NEW
     # epsilon_window: float = 0.0  # OLD
     beta_values: list[float] | None = None,  # NEW : un dossier de résultats par beta (suffixe _beta_x des racines)
-    criteria: list[str] | None = None  # NEW : critères E (total, indiv), un sous-dossier par critère
+    criteria: list[str] | None = None,  # NEW : critères E (total, indiv), un sous-dossier par critère
+    skip_existing: bool = False  # NEW : saute les instances dont le summary.csv existe déjà (reprise après time limit)
 ):
     """
     Lance la méthode d'acceptation sur toutes les instances contenues dans root_dir.
@@ -340,6 +341,13 @@ def run_all_controlled_instances(
 
             if inst_filter is not None and inst != inst_filter:
                 continue
+
+            if skip_existing:  # NEW : reprise -> on ne refait pas une instance déjà terminée
+                done_csv = os.path.join(analysis_root + beta_suffix, criterion, scenario,
+                                        f"delta_{str(delta_ratio).replace('.', '_')}", inst, variant, "summary.csv")
+                if os.path.exists(done_csv):
+                    print(f"⏭️ déjà fait : {scenario}/{inst}/{variant} delta={delta_ratio}")
+                    continue
 
             print("\n" + "#" * 80)
             print(f"Scenario : {scenario}")
@@ -603,6 +611,7 @@ if __name__ == "__main__":
     parser.add_argument("--criteria", type=str, nargs="+", choices=["total", "indiv"], default=None, help="Mode all : ex. --criteria total indiv (sous-dossiers total/ et indiv/)")  # NEW
     parser.add_argument("--betas", type=float, nargs="+", default=None, help="Mode all : liste de beta, ex: --betas 0.1 0.2 (suffixe _beta_x ajouté à output_root et analysis_root)")  # NEW
     parser.add_argument("--analysis_root", type=str, default=ANALYSIS_ROOT, help="Dossier racine des analyses (summary.csv, tableaux d'acceptation)")  # NEW
+    parser.add_argument("--skip_existing", action="store_true", help="Mode all : saute les instances dont le summary.csv existe déjà (reprise)")  # NEW
     parser.add_argument("--num_cpus", type=int, default=8, help="Nombre de CPU pour Ray (expansion du beam)")
     args = parser.parse_args()
     use_beam = args.beam.lower() == "true"
@@ -629,7 +638,8 @@ if __name__ == "__main__":
             analysis_root=args.analysis_root,  # NEW
             # epsilon_window=args.epsilon  # OLD
             beta_values=args.betas if args.betas is not None else [args.beta],  # NEW
-            criteria=args.criteria if args.criteria is not None else [args.criterion]  # NEW
+            criteria=args.criteria if args.criteria is not None else [args.criterion],  # NEW
+            skip_existing=args.skip_existing  # NEW
         ) 
     else:
         if args.input is None: raise ValueError("En mode one, tu dois fournir --input")

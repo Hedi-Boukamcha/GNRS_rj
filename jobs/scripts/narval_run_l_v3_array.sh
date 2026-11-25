@@ -42,6 +42,12 @@ ID=$SLURM_ARRAY_TASK_ID
 SCENARIO=${SCENARIOS[$(( ID % 6 ))]}
 CRITERION=${CRITERIA[$(( (ID / 6) % 2 ))]}
 BETA=${BETAS[$(( ID / 12 ))]}
+# NEW : surcharges optionnelles via sbatch --export (sinon : L, mapping 24 taches ci-dessus)
+#   ex. m, beta 0.2, indiv seulement (6 taches = 6 scenarios) :
+#   sbatch --array=0-5 --export=ALL,SIZE=m,BETA_OVERRIDE=0.2,CRITERION_OVERRIDE=indiv jobs/scripts/narval_run_l_v3_array.sh
+SIZE=${SIZE:-l}
+BETA=${BETA_OVERRIDE:-$BETA}
+CRITERION=${CRITERION_OVERRIDE:-$CRITERION}
 
 module purge
 module load StdEnv/2023 python/3.11
@@ -58,10 +64,10 @@ trap 'rm -rf "$RAY_TMPDIR"' EXIT
 export PYTHONUNBUFFERED=1   # .out ecrit en temps reel (sinon Python bufferise la sortie)
 
 echo "== Tache $ID (job $SLURM_ARRAY_JOB_ID) sur $(hostname) =="
-echo "Scenario=$SCENARIO | Critere=$CRITERION | Beta=$BETA | commit=$(git rev-parse --short HEAD)"
+echo "Taille=$SIZE | Scenario=$SCENARIO | Critere=$CRITERION | Beta=$BETA | commit=$(git rev-parse --short HEAD)"
 
 python acceptation_solver_complete_agent.py --mode all \
-    --root_dir "data/controlled_orders_paired_v3/test/l" \
+    --root_dir "data/controlled_orders_paired_v3/test/$SIZE" \
     --inst_filter "$SCENARIO" \
     --output_root "results/paired_v3_no_cmax/test" \
     --analysis_root "analysis_paired_v3_no_cmax" \
@@ -71,6 +77,8 @@ python acceptation_solver_complete_agent.py --mode all \
     --criteria "$CRITERION" \
     --device cpu \
     --generate_gantts false \
+    --skip_existing \
     --num_cpus "$SLURM_CPUS_PER_TASK"
+# --skip_existing : une tache relancee (ex. apres TIMEOUT) ne refait pas les instances deja terminees
 
 echo "== Tache $ID terminee =="
